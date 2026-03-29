@@ -204,8 +204,11 @@
             </div>
 
             <div class="mt-8 pb-4">
-                <h3 class="lucky-font text-xl mb-3 text-zinc-400">BÀI CỦA BẠN (<span id="hand-count">0</span>)</h3>
-                <div id="my-hand" class="flex flex-wrap justify-center gap-2 overflow-x-auto py-4 min-h-[180px]"></div>
+                <div class="flex flex-col sm:flex-row justify-between items-center sm:items-end mb-3 gap-3">
+                    <h3 class="lucky-font text-xl text-zinc-400">BÀI CỦA BẠN (<span id="hand-count">0</span>)</h3>
+                    <button id="play-selected-btn" onclick="executePlay()" class="hidden bg-green-600 hover:bg-green-700 border border-green-400 px-8 py-2 rounded-xl text-white font-bold lucky-font transition-transform active:scale-95 shadow-[0_0_15px_rgba(34,197,94,0.4)] tracking-widest text-lg">ĐÁNH BÀI</button>
+                </div>
+                <div id="my-hand" class="flex flex-wrap justify-center gap-2 overflow-x-auto py-6 min-h-[180px]"></div>
             </div>
         </div>
     </div>
@@ -239,17 +242,27 @@
         let unsubscribe = null;
         let gameState = null;
         let isInitialized = false;
+        let selectedCardIndexes = [];
 
         const CARD_TYPES = {
-            KITTEN: { name: 'Mèo Nổ', color: 'bg-black text-white', desc: 'Bạn bị loại trừ khi có Defuse!', isAction: false },
-            DEFUSE: { name: 'Gỡ Bom', color: 'bg-green-500 text-black', desc: 'Vô hiệu hóa Mèo Nổ.', isAction: false },
-            ATTACK: { name: 'Tấn Công', color: 'bg-orange-600 text-white', desc: 'Kết thúc lượt, người sau rút 2 lần.', isAction: true },
-            SKIP: { name: 'Bỏ Qua', color: 'bg-blue-500 text-white', desc: 'Kết thúc lượt rút bài của bạn.', isAction: true },
-            FAVOR: { name: 'Ưu Đãi', color: 'bg-purple-500 text-white', desc: 'Chọn 1 người đưa bài cho bạn.', isAction: true },
-            SHUFFLE: { name: 'Xáo Bài', color: 'bg-yellow-500 text-black', desc: 'Xáo lại chồng bài rút.', isAction: true },
-            FUTURE: { name: 'Tương Lai', color: 'bg-pink-500 text-white', desc: 'Xem 3 lá bài đầu tiên.', isAction: true },
-            CAT_1: { name: 'Mèo Chân Dài', color: 'bg-zinc-400 text-black', desc: 'Mèo bình thường.', isAction: false },
-            CAT_2: { name: 'Mèo Râu Ngắn', color: 'bg-zinc-400 text-black', desc: 'Mèo bình thường.', isAction: false }
+            KITTEN: { name: 'Mèo Nổ', color: 'bg-red-600 text-white', desc: 'Bạn bị loại trừ khi rút lá này (trừ khi có Gỡ Bom)!', isAction: false },
+            DEFUSE: { name: 'Gỡ Bom', color: 'bg-green-500 text-white', desc: 'Vô hiệu hóa Mèo Nổ.', isAction: false },
+            ATTACK: { name: 'Tấn Công', color: 'bg-orange-600 text-white', desc: 'Người tiếp theo rút 2 lần.', isAction: true },
+            SKIP: { name: 'Bỏ Qua', color: 'bg-blue-500 text-white', desc: 'Kết thúc lượt mà không cần rút.', isAction: true },
+            FAVOR: { name: 'Ưu Đãi', color: 'bg-purple-500 text-white', desc: 'Chọn 1 người bắt họ đưa 1 lá bài.', isAction: true },
+            SHUFFLE: { name: 'Xáo Bài', color: 'bg-yellow-500 text-black', desc: 'Xáo trộn lại chồng bài.', isAction: true },
+            SEE_THE_FUTURE: { name: 'Nhìn Tương Lai', color: 'bg-pink-500 text-white', desc: 'Xem 3 lá bài đầu.', isAction: true },
+            NOPE: { name: 'Không Đâu', color: 'bg-red-500 text-white', desc: 'Chặn bất kỳ lá bài hành động nào.', isAction: true },
+            TACOCAT: { name: 'Mèo Taco', color: 'bg-amber-400 text-black', desc: 'Không có tác dụng.', isAction: false },
+            HAIRY_POTATO_CAT: { name: 'Mèo Kho.Tây Lông', color: 'bg-orange-300 text-black', desc: 'Không có tác dụng.', isAction: false },
+            CATTERMELON: { name: 'Mèo Dưa Hấu', color: 'bg-green-400 text-black', desc: 'Không có tác dụng.', isAction: false },
+            RAINBOW_RALPHING_CAT: { name: 'Mèo Cầu Vồng', color: 'bg-gradient-to-r from-red-400 via-yellow-400 to-blue-400 text-white', desc: 'Không có tác dụng.', isAction: false },
+            BEARD_CAT: { name: 'Mèo Râu Ria', color: 'bg-slate-600 text-white', desc: 'Không có tác dụng.', isAction: false }
+        };
+
+        const DECK_COMPOSITION = {
+            ATTACK: 4, SKIP: 4, FAVOR: 4, SHUFFLE: 4, SEE_THE_FUTURE: 5, NOPE: 5,
+            TACOCAT: 4, HAIRY_POTATO_CAT: 4, CATTERMELON: 4, RAINBOW_RALPHING_CAT: 4, BEARD_CAT: 4
         };
 
         // --- Logic khởi tạo ---
@@ -477,22 +490,37 @@
                 playersList.appendChild(pDiv);
             });
 
+            if (!isMyTurn) selectedCardIndexes = [];
+            
             const handEl = document.getElementById('my-hand');
             handEl.innerHTML = '';
             document.getElementById('hand-count').innerText = me.hand.length;
+            
             me.hand.forEach((cardType, idx) => {
                 const cardData = CARD_TYPES[cardType];
                 const cardBtn = document.createElement('button');
-                cardBtn.className = `w-24 h-36 p-2 rounded-lg pixel-border flex flex-col justify-between text-left card-animation ${cardData.color} shrink-0 disabled:opacity-50 disabled:hover:translate-y-0`;
+                const isSelected = selectedCardIndexes.includes(idx);
+                
+                cardBtn.className = `w-24 h-36 p-2 rounded-lg pixel-border flex flex-col justify-between text-left card-animation ${cardData.color} shrink-0 disabled:opacity-50 disabled:hover:translate-y-0 ${isSelected ? '-translate-y-6 ring-4 ring-yellow-400 shadow-[0_10px_20px_rgba(250,204,21,0.5)] z-40' : ''}`;
                 cardBtn.disabled = !isMyTurn || me.isDead;
                 cardBtn.innerHTML = `
                 <p class="text-[10px] font-bold leading-tight uppercase">${cardData.name}</p>
                 <div class="text-[8px] mt-1 leading-none italic">${cardData.desc}</div>
                 <div class="mt-auto text-right text-xs">🐈</div>
             `;
-                cardBtn.onclick = () => playCard(cardType, idx);
+                cardBtn.onclick = () => toggleCardSelection(idx);
                 handEl.appendChild(cardBtn);
             });
+
+            const playBtn = document.getElementById('play-selected-btn');
+            const hasOnlyNopeSelected = selectedCardIndexes.length === 1 && me.hand[selectedCardIndexes[0]] === 'NOPE';
+            if ((isMyTurn && selectedCardIndexes.length > 0) || hasOnlyNopeSelected) {
+                playBtn.classList.remove('hidden');
+                playBtn.classList.add('animate-pulse');
+            } else {
+                playBtn.classList.add('hidden');
+                playBtn.classList.remove('animate-pulse');
+            }
 
             document.getElementById('deck-count').innerText = gameState.deck.length;
             const lastDiscard = gameState.discardPile[gameState.discardPile.length - 1];
@@ -511,15 +539,10 @@
         }
 
         function generateInitialDeck() {
-            const types = [
-                ...Array(4).fill('ATTACK'),
-                ...Array(4).fill('SKIP'),
-                ...Array(4).fill('FAVOR'),
-                ...Array(4).fill('SHUFFLE'),
-                ...Array(5).fill('FUTURE'),
-                ...Array(4).fill('CAT_1'),
-                ...Array(4).fill('CAT_2'),
-            ];
+            const types = [];
+            for (const [cardType, count] of Object.entries(DECK_COMPOSITION)) {
+                for (let i = 0; i < count; i++) types.push(cardType);
+            }
             return types.sort(() => Math.random() - 0.5);
         }
 
@@ -559,9 +582,14 @@
             const me = players[meIdx];
             let logs = [...gameState.logs];
 
+            let isExploding = false;
+            let isDefused = false;
+
             if (card === 'KITTEN') {
+                isExploding = true;
                 const defuseIdx = me.hand.indexOf('DEFUSE');
                 if (defuseIdx > -1) {
+                    isDefused = true;
                     me.hand.splice(defuseIdx, 1);
                     logs.push(`💣 ${me.name} rút trúng Mèo Nổ nhưng đã GỠ BOM!`);
                     const insertPos = Math.floor(Math.random() * deck.length);
@@ -577,6 +605,7 @@
                     logs.push(`💥 BÙM! ${me.name} đã bị nổ tung.`);
                     const survivors = players.filter(p => !p.isDead);
                     if (survivors.length === 1) {
+                        showDrawnCardPopup(card, true, false);
                         logs.push(`🏆 ${survivors[0].name} LÀ NGƯỜI CHIẾN THẮNG!`);
                         await roomRef.update({ status: 'finished', logs, players, deck });
                         return;
@@ -593,10 +622,71 @@
                 }
             }
 
+            // Show Popup locally to the player drawing the card
+            showDrawnCardPopup(card, isExploding, isDefused);
+
             await roomRef.update({ players, deck, logs, currentTurn: gameState.currentTurn });
         }
 
-        async function playCard(cardType, cardIdx) {
+        function toggleCardSelection(idx) {
+            const pos = selectedCardIndexes.indexOf(idx);
+            if (pos > -1) {
+                selectedCardIndexes.splice(pos, 1);
+            } else {
+                selectedCardIndexes.push(idx);
+            }
+            renderGame();
+        }
+
+        async function executePlay() {
+            if (!gameState || gameState.status !== 'playing' || !userId) return;
+            const meIdx = gameState.players.findIndex(p => p.uid === userId);
+            const me = gameState.players[meIdx];
+
+            if (selectedCardIndexes.length === 0) return;
+
+            const indexes = [...selectedCardIndexes].sort((a,b) => b-a);
+            const types = indexes.map(i => me.hand[i]);
+            const isNopeOnly = types.length === 1 && types[0] === 'NOPE';
+
+            if (gameState.currentTurn !== meIdx && !isNopeOnly) {
+                showToast("Chưa tới lượt của bạn!");
+                return;
+            }
+
+            if (types.length === 1) {
+                const type = types[0];
+                if (!CARD_TYPES[type].isAction) {
+                    showToast("Lá bài này không thể đánh 1 mình!");
+                    return;
+                }
+                await playSingleActionCard(type, indexes[0]);
+            } else if (types.length === 2) {
+                if (types[0] === types[1] && !CARD_TYPES[types[0]].isAction && types[0] !== 'KITTEN' && types[0] !== 'DEFUSE') {
+                     askCombo2Target(indexes);
+                } else {
+                     showToast("Cần 2 lá bài THƯỜNG giống nhau!");
+                }
+            } else if (types.length === 3) {
+                if (types[0] === types[1] && types[1] === types[2] && !CARD_TYPES[types[0]].isAction && types[0] !== 'KITTEN' && types[0] !== 'DEFUSE') {
+                     askCombo3Target(indexes);
+                } else {
+                     showToast("Cần 3 lá bài THƯỜNG giống nhau!");
+                }
+            } else if (types.length === 5) {
+                const uniqueTypes = new Set(types);
+                if (uniqueTypes.size === 5) {
+                     askCombo5Target(indexes);
+                } else {
+                     showToast("Cần 5 lá bài KHÁC NHAU hoàn toàn!");
+                }
+            } else {
+                showToast("Tổ hợp bài không hợp lệ!");
+            }
+        }
+
+        async function playSingleActionCard(cardType, cardIdx) {
+            selectedCardIndexes = [];
             if (!gameState || gameState.status !== 'playing' || !userId) return;
             const meIdx = gameState.players.findIndex(p => p.uid === userId);
             const players = [...gameState.players];
@@ -623,8 +713,11 @@
                 case 'SHUFFLE':
                     deck = deck.sort(() => Math.random() - 0.5);
                     break;
-                case 'FUTURE':
+                case 'SEE_THE_FUTURE':
                     showFuture(deck.slice(-3).reverse());
+                    break;
+                case 'NOPE':
+                    logs.push(`🚫 NOPE! Thẻ NOPE hiện chỉ có tác dụng chặn cơ bản, người chơi hãy tự thoả thuận và chat nhé!`);
                     break;
                 case 'FAVOR':
                     askFavor(players, meIdx);
@@ -697,6 +790,196 @@
 
             closeModal();
             await roomRef.update({ players: gameState.players, logs: gameState.logs });
+        }
+
+        function showDrawnCardPopup(cardType, isExploding, defused) {
+            const modal = document.getElementById('modal-container');
+            const content = document.getElementById('modal-content');
+            modal.classList.remove('hidden');
+
+            const cInfo = CARD_TYPES[cardType];
+            let title = "BẠN RÚT ĐƯỢC LÁ BÀI";
+            if (isExploding && defused) title = "MÈO NỔ! (ĐÃ GỠ BOM)";
+            else if (isExploding && !defused) title = "BÙMMMMM! (MÈO NỔ)";
+
+            content.innerHTML = `
+                <h3 class="lucky-font text-2xl mb-4 text-center ${isExploding ? 'text-red-500 animate-pulse' : 'text-blue-400'}">${title}</h3>
+                <div class="flex justify-center mb-6 mt-4">
+                    <div class="w-40 h-56 p-4 rounded-xl pixel-border ${cInfo.color} flex flex-col justify-between text-center card-animation animate-bounce">
+                        <p class="text-sm font-bold uppercase tracking-wider">${cInfo.name}</p>
+                        <div class="text-xs italic mt-2">${cInfo.desc}</div>
+                        <div class="text-4xl mt-auto">🐈</div>
+                    </div>
+                </div>
+                <button onclick="closeModal()" class="w-full bg-zinc-700 hover:bg-zinc-600 py-3 rounded-xl lucky-font transition-colors">ĐÓNG & TIẾP TỤC</button>
+            `;
+        }
+
+        function askCombo2Target(indexesToDiscard) {
+            const players = gameState.players;
+            const meIdx = players.findIndex(p => p.uid === userId);
+            const others = players.filter((p, idx) => idx !== meIdx && !p.isDead);
+
+            if (others.length === 0) return;
+
+            const modal = document.getElementById('modal-container');
+            const content = document.getElementById('modal-content');
+            modal.classList.remove('hidden');
+
+            content.innerHTML = `
+                <h3 class="lucky-font text-2xl mb-4 text-orange-500">COMBO 2 LÁ LẤY TRỘM</h3>
+                <p class="text-sm text-zinc-400 mb-4">Chọn 1 người để cướp ngẫu nhiên 1 lá bài:</p>
+                <div class="space-y-2 mb-6 max-h-60 overflow-y-auto">
+                    ${others.map(p => `
+                        <button onclick='executeCombo2("${p.uid}", ${JSON.stringify(indexesToDiscard)})' class="w-full bg-zinc-800 hover:bg-zinc-700 p-3 rounded-xl text-left border border-zinc-700 font-bold ${p.hand.length === 0 ? 'opacity-50 cursor-not-allowed' : ''}" ${p.hand.length === 0 ? 'disabled' : ''}>
+                            ${p.name} (${p.hand.length} lá)
+                        </button>
+                    `).join('')}
+                </div>
+                <button onclick="closeModal()" class="w-full bg-zinc-700 hover:bg-zinc-600 py-3 rounded-xl lucky-font">HỦY</button>
+            `;
+        }
+
+        async function executeCombo2(targetUid, indexesToDiscard) {
+            selectedCardIndexes = [];
+            const players = [...gameState.players];
+            const meIdx = players.findIndex(p => p.uid === userId);
+            const me = players[meIdx];
+            const target = players.find(p => p.uid === targetUid);
+            const logs = [...gameState.logs];
+            const discardPile = [...gameState.discardPile];
+
+            indexesToDiscard.sort((a,b) => b-a).forEach(idx => discardPile.push(me.hand.splice(idx, 1)[0]));
+            logs.push(`🥷 ${me.name} dùng Combo 2 lá cướp ngẫu nhiên từ ${target.name}!`);
+
+            if (target && target.hand.length > 0) {
+                const randIdx = Math.floor(Math.random() * target.hand.length);
+                const card = target.hand.splice(randIdx, 1)[0];
+                me.hand.push(card);
+                logs.push(`🎁 ${me.name} đã lấy được 1 lá bài.`);
+            } else {
+                logs.push(`🤷‍♂️ ${target.name} không có bài để cướp.`);
+            }
+
+            closeModal();
+            await roomRef.update({ players, logs, discardPile, currentTurn: gameState.currentTurn });
+        }
+
+        function askCombo3Target(indexesToDiscard) {
+            const players = gameState.players;
+            const meIdx = players.findIndex(p => p.uid === userId);
+            const others = players.filter((p, idx) => idx !== meIdx && !p.isDead);
+
+            if (others.length === 0) return;
+
+            const modal = document.getElementById('modal-container');
+            const content = document.getElementById('modal-content');
+            modal.classList.remove('hidden');
+
+            content.innerHTML = `
+                <h3 class="lucky-font text-2xl mb-4 text-red-500">COMBO 3 LÁ CHỈ ĐỊNH</h3>
+                <p class="text-sm text-zinc-400 mb-4">Bước 1: Chọn mục tiêu để đòi bài</p>
+                <div class="space-y-2 mb-6 max-h-60 overflow-y-auto">
+                    ${others.map(p => `
+                        <button onclick='askCombo3CardType("${p.uid}", ${JSON.stringify(indexesToDiscard)})' class="w-full bg-zinc-800 hover:bg-zinc-700 p-3 rounded-xl text-left border border-zinc-700 font-bold ${p.hand.length === 0 ? 'opacity-50 cursor-not-allowed' : ''}" ${p.hand.length === 0 ? 'disabled' : ''}>
+                            ${p.name} (${p.hand.length} lá)
+                        </button>
+                    `).join('')}
+                </div>
+                <button onclick="closeModal()" class="w-full bg-zinc-700 hover:bg-zinc-600 py-3 rounded-xl lucky-font">HỦY</button>
+            `;
+        }
+
+        function askCombo3CardType(targetUid, indexesToDiscard) {
+            const content = document.getElementById('modal-content');
+            const possibleCards = Object.keys(CARD_TYPES).filter(k => k !== 'KITTEN');
+
+            content.innerHTML = `
+                <h3 class="lucky-font text-2xl mb-4 text-red-500">COMBO 3 LÁ CHỈ ĐỊNH</h3>
+                <p class="text-sm text-zinc-400 mb-4">Bước 2: Chọn lá bài bạn muốn đòi</p>
+                <div class="grid grid-cols-2 gap-2 mb-6 max-h-60 overflow-y-auto pr-2">
+                    ${possibleCards.map(c => `
+                        <button onclick='executeCombo3("${targetUid}", "${c}", ${JSON.stringify(indexesToDiscard)})' class="p-3 rounded-xl border border-zinc-600 ${CARD_TYPES[c].color} text-[10px] sm:text-xs font-bold uppercase transition-transform hover:scale-105 active:scale-95 flex items-center justify-center text-center h-16">
+                            ${CARD_TYPES[c].name}
+                        </button>
+                    `).join('')}
+                </div>
+                <button onclick="closeModal()" class="w-full bg-zinc-700 hover:bg-zinc-600 py-3 rounded-xl lucky-font">HỦY</button>
+            `;
+        }
+
+        async function executeCombo3(targetUid, requestedCardType, indexesToDiscard) {
+            selectedCardIndexes = [];
+            const players = [...gameState.players];
+            const meIdx = players.findIndex(p => p.uid === userId);
+            const me = players[meIdx];
+            const target = players.find(p => p.uid === targetUid);
+            const logs = [...gameState.logs];
+            const discardPile = [...gameState.discardPile];
+
+            indexesToDiscard.sort((a,b) => b-a).forEach(idx => discardPile.push(me.hand.splice(idx, 1)[0]));
+            logs.push(`🎯 ${me.name} dùng Combo 3 lá đòi lá ${CARD_TYPES[requestedCardType].name} từ ${target.name}!`);
+
+            if (target && target.hand.includes(requestedCardType)) {
+                const cardIdx = target.hand.indexOf(requestedCardType);
+                target.hand.splice(cardIdx, 1);
+                me.hand.push(requestedCardType);
+                logs.push(`✅ ${target.name} đã ngậm ngùi đưa lá ${CARD_TYPES[requestedCardType].name} cho ${me.name}.`);
+            } else {
+                 logs.push(`❌ ${target.name} KHÔNG CÓ lá đó. ${me.name} mất bài vô ích!`);
+            }
+
+            closeModal();
+            await roomRef.update({ players, logs, discardPile, currentTurn: gameState.currentTurn });
+        }
+
+        function askCombo5Target(indexesToDiscard) {
+            const discardPile = gameState.discardPile;
+            const uniqueDiscards = [...new Set(discardPile)].filter(c => c !== 'KITTEN' && c !== 'DEFUSE');
+            if (uniqueDiscards.length === 0) {
+                showToast("Không có lá bài hợp lệ nào trong đống bỏ!");
+                return;
+            }
+
+            const modal = document.getElementById('modal-container');
+            const content = document.getElementById('modal-content');
+            modal.classList.remove('hidden');
+
+            content.innerHTML = `
+                <h3 class="lucky-font text-2xl mb-4 text-yellow-500">COMBO 5 LÁ KHÁC NHAU</h3>
+                <p class="text-sm text-zinc-400 mb-4">Chọn 1 lá bài từ đống bài bỏ để nhặt về:</p>
+                <div class="grid grid-cols-2 gap-2 mb-6 max-h-60 overflow-y-auto pr-2">
+                    ${uniqueDiscards.map(c => `
+                        <button onclick='executeCombo5("${c}", ${JSON.stringify(indexesToDiscard)})' class="p-3 rounded-xl border border-zinc-600 ${CARD_TYPES[c].color} text-[10px] sm:text-xs font-bold uppercase transition-transform hover:scale-105 active:scale-95 flex items-center justify-center text-center h-16">
+                            ${CARD_TYPES[c].name}
+                        </button>
+                    `).join('')}
+                </div>
+                <button onclick="closeModal()" class="w-full bg-zinc-700 hover:bg-zinc-600 py-3 rounded-xl lucky-font">HỦY</button>
+            `;
+        }
+
+        async function executeCombo5(requestedCardType, indexesToDiscard) {
+            selectedCardIndexes = [];
+            const players = [...gameState.players];
+            const meIdx = players.findIndex(p => p.uid === userId);
+            const me = players[meIdx];
+            const logs = [...gameState.logs];
+            const discardPile = [...gameState.discardPile];
+
+            indexesToDiscard.sort((a,b) => b-a).forEach(idx => discardPile.push(me.hand.splice(idx, 1)[0]));
+            
+            const cardIdx = discardPile.indexOf(requestedCardType);
+            if (cardIdx > -1) {
+                discardPile.splice(cardIdx, 1);
+                me.hand.push(requestedCardType);
+                logs.push(`♻️ ${me.name} dùng Combo 5 lá khác nhau và nhặt 1 lá ${CARD_TYPES[requestedCardType].name} từ đống bài bỏ!`);
+            } else {
+                logs.push(`♻️ ${me.name} thất bại khi tính nhặt ${requestedCardType} (lỗi đồng bộ).`);
+            }
+
+            closeModal();
+            await roomRef.update({ players, logs, discardPile, currentTurn: gameState.currentTurn });
         }
 
         function closeModal() {

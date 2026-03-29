@@ -218,13 +218,20 @@
 
     <script>
         // --- Cấu hình Firebase ---
-        const firebaseConfigRaw = typeof __firebase_config !== 'undefined' ? __firebase_config : '{}';
-        const firebaseConfig = JSON.parse(firebaseConfigRaw);
+        const firebaseConfig = {
+            apiKey: "AIzaSyCLDlE-pA0jEKkonLj55dhZd_gUkhb7QaE",
+            authDomain: "meono-game.firebaseapp.com",
+            projectId: "meono-game",
+            storageBucket: "meono-game.firebasestorage.app",
+            messagingSenderId: "701147998794",
+            appId: "1:701147998794:web:8210355f309b69b360f089",
+            measurementId: "G-3S9BND9M83"
+        };
 
         firebase.initializeApp(firebaseConfig);
         const auth = firebase.auth();
         const db = firebase.firestore();
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'exploding-kittens-v1';
+        const appId = 'meono-game-v1';
 
         let currentRoomId = null;
         let userId = null;

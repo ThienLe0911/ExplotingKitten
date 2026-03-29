@@ -1,0 +1,702 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Exploding Kittens Online</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Sử dụng phiên bản compat để có biến firebase toàn cục -->
+    <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore-compat.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Luckiest+Guy&family=Inter:wght@400;700&display=swap');
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #1a1a1a;
+            color: #fff;
+            overflow-x: hidden;
+        }
+
+        .lucky-font {
+            font-family: 'Luckiest Guy', cursive;
+        }
+
+        .card-animation {
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        .card-animation:hover:not(:disabled) {
+            transform: translateY(-20px) scale(1.05);
+            z-index: 50;
+        }
+
+        .bg-pattern {
+            background-image: radial-gradient(#333 1px, transparent 1px);
+            background-size: 20px 20px;
+        }
+
+        .pixel-border {
+            border: 4px solid #000;
+            box-shadow: 4px 4px 0px #000;
+        }
+
+        /* Custom scrollbar */
+        #game-logs::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        #game-logs::-webkit-scrollbar-thumb {
+            background: #444;
+            border-radius: 10px;
+        }
+
+        /* Toast notification */
+        #toast {
+            visibility: hidden;
+            min-width: 250px;
+            margin-left: -125px;
+            background-color: #333;
+            color: #fff;
+            text-align: center;
+            border-radius: 8px;
+            padding: 16px;
+            position: fixed;
+            z-index: 200;
+            left: 50%;
+            bottom: 30px;
+            border: 2px solid #ef4444;
+        }
+
+        #toast.show {
+            visibility: visible;
+            animation: fadein 0.5s, fadeout 0.5s 2.5s;
+        }
+
+        @keyframes fadein {
+            from {
+                bottom: 0;
+                opacity: 0;
+            }
+
+            to {
+                bottom: 30px;
+                opacity: 1;
+            }
+        }
+
+        @keyframes fadeout {
+            from {
+                bottom: 30px;
+                opacity: 1;
+            }
+
+            to {
+                bottom: 0;
+                opacity: 0;
+            }
+        }
+    </style>
+</head>
+
+<body class="bg-pattern min-h-screen">
+
+    <div id="app" class="max-w-6xl mx-auto p-4 flex flex-col min-h-screen">
+        <!-- Header -->
+        <header class="flex justify-between items-center mb-6">
+            <h1 class="text-4xl lucky-font text-red-500 tracking-wider">MÈO NỔ ONLINE</h1>
+            <div id="user-info" class="text-xs bg-zinc-800 p-2 rounded-lg border border-zinc-700 hidden">
+                ID: <span id="my-id" class="font-mono text-yellow-400">...</span>
+            </div>
+        </header>
+
+        <!-- Lobby Screen -->
+        <div id="lobby-screen" class="flex-grow flex flex-col items-center justify-center space-y-8">
+            <div id="blob-warning"
+                class="hidden bg-yellow-900/40 border-2 border-yellow-600 p-4 rounded-xl max-w-md text-sm text-yellow-200 mb-4">
+                ⚠️ <strong>Lưu ý:</strong> Bạn đang chạy game từ link tạm thời (blob). Link mời tự động có thể không
+                hoạt động trên máy người khác. Hãy gửi <strong>Mã phòng</strong> trực tiếp cho bạn bè nhé!
+            </div>
+
+            <div class="bg-zinc-800 p-8 rounded-2xl pixel-border w-full max-w-md">
+                <h2 class="text-2xl lucky-font mb-4 text-center">PHÒNG CHỜ</h2>
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm mb-1 text-zinc-400">Tên của bạn:</label>
+                        <input type="text" id="player-name"
+                            class="w-full p-3 bg-zinc-900 border border-zinc-700 rounded-xl focus:outline-none focus:border-red-500 text-white"
+                            placeholder="Nhập tên...">
+                    </div>
+                    <button id="create-btn" onclick="createRoom()"
+                        class="w-full bg-red-600 hover:bg-red-700 py-3 rounded-xl lucky-font text-xl transition-transform active:scale-95 disabled:opacity-50"
+                        disabled>ĐANG KHỞI TẠO...</button>
+                    <div class="relative flex items-center py-2">
+                        <div class="flex-grow border-t border-zinc-700"></div>
+                        <span class="flex-shrink mx-4 text-zinc-500 uppercase text-xs">Hoặc</span>
+                        <div class="flex-grow border-t border-zinc-700"></div>
+                    </div>
+                    <div class="flex space-x-2">
+                        <input type="text" id="join-room-id"
+                            class="flex-grow p-3 bg-zinc-900 border border-zinc-700 rounded-xl focus:outline-none focus:border-blue-500 text-white uppercase"
+                            placeholder="Mã phòng...">
+                        <button id="join-btn" onclick="joinRoom()"
+                            class="bg-blue-600 hover:bg-blue-700 px-6 py-3 rounded-xl lucky-font text-xl transition-transform active:scale-95 disabled:opacity-50"
+                            disabled>VÀO</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Game Screen -->
+        <div id="game-screen" class="hidden flex-grow flex flex-col">
+            <div class="flex justify-between items-start mb-4">
+                <div class="bg-zinc-800 px-4 py-2 rounded-xl pixel-border flex items-center space-x-3">
+                    <div>
+                        <p class="text-xs text-zinc-400">Mã phòng:</p>
+                        <p id="display-room-id" class="font-bold text-xl text-yellow-500"></p>
+                    </div>
+                    <button onclick="copyInviteLink()"
+                        class="bg-zinc-700 hover:bg-zinc-600 p-2 rounded-lg transition-colors"
+                        title="Sao chép link mời hoặc mã phòng">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
+                            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+                            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+                        </svg>
+                    </button>
+                </div>
+                <div id="turn-indicator" class="bg-red-600 px-6 py-2 rounded-xl lucky-font text-xl">
+                    ĐANG CHỜ...
+                </div>
+                <button id="start-btn" onclick="startGame()"
+                    class="hidden bg-green-600 hover:bg-green-700 px-6 py-2 rounded-xl lucky-font text-xl">BẮT
+                    ĐẦU</button>
+            </div>
+
+            <div id="players-list" class="grid grid-cols-2 md:grid-cols-6 gap-2 mb-6"></div>
+
+            <div class="flex-grow grid grid-cols-1 md:grid-cols-3 gap-6 items-center">
+                <div class="flex flex-col items-center space-y-2">
+                    <div id="draw-pile" onclick="drawCard()"
+                        class="w-32 h-44 bg-red-900 border-4 border-white rounded-xl flex items-center justify-center cursor-pointer hover:bg-red-800 transition-colors shadow-2xl relative group">
+                        <div class="absolute inset-2 border-2 border-dashed border-red-400 rounded-lg"></div>
+                        <span class="lucky-font text-4xl group-hover:scale-110 transition-transform text-white">?</span>
+                        <div class="absolute -bottom-2 -right-2 bg-white text-black px-2 py-1 rounded text-xs font-bold"
+                            id="deck-count">0</div>
+                    </div>
+                    <p class="text-sm font-bold uppercase tracking-widest text-zinc-400">Rút bài</p>
+                </div>
+
+                <div class="flex flex-col items-center space-y-2">
+                    <div id="discard-pile"
+                        class="w-32 h-44 bg-zinc-800 border-2 border-zinc-600 rounded-xl flex flex-col items-center justify-center shadow-xl p-2 text-center overflow-hidden">
+                        <span id="discard-name" class="text-xs font-bold uppercase">Trống</span>
+                    </div>
+                    <p class="text-sm font-bold uppercase tracking-widest text-zinc-400">Bài đã đánh</p>
+                </div>
+
+                <div class="bg-black/40 rounded-xl p-4 h-44 overflow-y-auto border border-zinc-800 text-sm"
+                    id="game-logs">
+                    <div class="text-zinc-500 italic">Hệ thống đang sẵn sàng...</div>
+                </div>
+            </div>
+
+            <div class="mt-8 pb-4">
+                <h3 class="lucky-font text-xl mb-3 text-zinc-400">BÀI CỦA BẠN (<span id="hand-count">0</span>)</h3>
+                <div id="my-hand" class="flex flex-wrap justify-center gap-2 overflow-x-auto py-4 min-h-[180px]"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast">Sao chép thành công!</div>
+
+    <div id="modal-container" class="fixed inset-0 bg-black/80 flex items-center justify-center z-[100] hidden">
+        <div id="modal-content" class="bg-zinc-900 p-6 rounded-2xl border-2 border-zinc-700 max-w-md w-full mx-4"></div>
+    </div>
+
+    <script>
+        // --- Cấu hình Firebase ---
+        const firebaseConfigRaw = typeof __firebase_config !== 'undefined' ? __firebase_config : '{}';
+        const firebaseConfig = JSON.parse(firebaseConfigRaw);
+
+        firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+        const db = firebase.firestore();
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'exploding-kittens-v1';
+
+        let currentRoomId = null;
+        let userId = null;
+        let roomRef = null;
+        let unsubscribe = null;
+        let gameState = null;
+        let isInitialized = false;
+
+        const CARD_TYPES = {
+            KITTEN: { name: 'Mèo Nổ', color: 'bg-black text-white', desc: 'Bạn bị loại trừ khi có Defuse!', isAction: false },
+            DEFUSE: { name: 'Gỡ Bom', color: 'bg-green-500 text-black', desc: 'Vô hiệu hóa Mèo Nổ.', isAction: false },
+            ATTACK: { name: 'Tấn Công', color: 'bg-orange-600 text-white', desc: 'Kết thúc lượt, người sau rút 2 lần.', isAction: true },
+            SKIP: { name: 'Bỏ Qua', color: 'bg-blue-500 text-white', desc: 'Kết thúc lượt rút bài của bạn.', isAction: true },
+            FAVOR: { name: 'Ưu Đãi', color: 'bg-purple-500 text-white', desc: 'Chọn 1 người đưa bài cho bạn.', isAction: true },
+            SHUFFLE: { name: 'Xáo Bài', color: 'bg-yellow-500 text-black', desc: 'Xáo lại chồng bài rút.', isAction: true },
+            FUTURE: { name: 'Tương Lai', color: 'bg-pink-500 text-white', desc: 'Xem 3 lá bài đầu tiên.', isAction: true },
+            CAT_1: { name: 'Mèo Chân Dài', color: 'bg-zinc-400 text-black', desc: 'Mèo bình thường.', isAction: false },
+            CAT_2: { name: 'Mèo Râu Ngắn', color: 'bg-zinc-400 text-black', desc: 'Mèo bình thường.', isAction: false }
+        };
+
+        // --- Logic khởi tạo ---
+
+        window.onload = async () => {
+            // Kiểm tra nếu là link blob
+            if (window.location.protocol === 'blob:' || window.location.href.includes('usercontent.goog')) {
+                document.getElementById('blob-warning').classList.remove('hidden');
+            }
+
+            const urlParams = new URLSearchParams(window.location.search);
+            const roomFromUrl = urlParams.get('room');
+            if (roomFromUrl) {
+                document.getElementById('join-room-id').value = roomFromUrl.toUpperCase();
+            }
+
+            const initAuth = async (retries = 0) => {
+                try {
+                    if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                        await auth.signInWithCustomToken(__initial_auth_token);
+                    } else {
+                        await auth.signInAnonymously();
+                    }
+                } catch (e) {
+                    if (retries < 5) {
+                        const delay = Math.pow(2, retries) * 1000;
+                        setTimeout(() => initAuth(retries + 1), delay);
+                    } else {
+                        console.error("Firebase Auth failed after retries.");
+                    }
+                }
+            };
+
+            await initAuth();
+
+            auth.onAuthStateChanged(user => {
+                if (user) {
+                    userId = user.uid;
+                    isInitialized = true;
+                    document.getElementById('user-info').classList.remove('hidden');
+                    document.getElementById('my-id').innerText = userId;
+                    document.getElementById('create-btn').innerText = "TẠO PHÒNG MỚI";
+                    document.getElementById('create-btn').disabled = false;
+                    document.getElementById('join-btn').disabled = false;
+                }
+            });
+        };
+
+        function showToast(message) {
+            const toast = document.getElementById("toast");
+            toast.innerText = message;
+            toast.className = "show";
+            setTimeout(() => { toast.className = toast.className.replace("show", ""); }, 3000);
+        }
+
+        function copyInviteLink() {
+            if (!currentRoomId) return;
+
+            const isBlob = window.location.protocol === 'blob:' || window.location.href.includes('usercontent.goog');
+
+            if (isBlob) {
+                // Nếu là link tạm, chỉ sao chép mã phòng
+                const el = document.createElement('textarea');
+                el.value = currentRoomId;
+                document.body.appendChild(el);
+                el.select();
+                document.execCommand('copy');
+                document.body.removeChild(el);
+                showToast("Đã sao chép MÃ PHÒNG: " + currentRoomId);
+            } else {
+                // Nếu là link thật, sao chép link mời
+                const baseUrl = window.location.href.split('?')[0];
+                const inviteUrl = `${baseUrl}?room=${currentRoomId}`;
+                const el = document.createElement('textarea');
+                el.value = inviteUrl;
+                document.body.appendChild(el);
+                el.select();
+                document.execCommand('copy');
+                document.body.removeChild(el);
+                showToast("Đã sao chép link mời!");
+            }
+        }
+
+        function getRoomsCollection() {
+            return db.collection('artifacts').doc(appId).collection('public').doc('data').collection('rooms');
+        }
+
+        function createRoom() {
+            if (!isInitialized || !userId) return;
+            const playerName = document.getElementById('player-name').value.trim() || 'Người chơi';
+            const roomId = Math.random().toString(36).substring(2, 8).toUpperCase();
+
+            const initialDeck = generateInitialDeck();
+
+            const roomData = {
+                id: roomId,
+                hostId: userId,
+                status: 'waiting',
+                currentTurn: 0,
+                players: [{
+                    uid: userId,
+                    name: playerName,
+                    hand: [],
+                    isDead: false,
+                    turnsToTake: 1
+                }],
+                deck: initialDeck,
+                discardPile: [],
+                logs: [`Phòng được tạo bởi ${playerName}`],
+                createdAt: firebase.firestore.FieldValue.serverTimestamp()
+            };
+
+            getRoomsCollection().doc(roomId).set(roomData)
+                .then(() => enterRoom(roomId))
+                .catch(err => console.error("Create room error:", err));
+        }
+
+        function joinRoom() {
+            if (!isInitialized || !userId) return;
+            const roomId = document.getElementById('join-room-id').value.trim().toUpperCase();
+            const playerName = document.getElementById('player-name').value.trim() || 'Khách';
+
+            if (!roomId) return;
+
+            const ref = getRoomsCollection().doc(roomId);
+
+            ref.get().then(doc => {
+                if (!doc.exists) {
+                    alert("Phòng không tồn tại!");
+                    return;
+                }
+                const data = doc.data();
+                if (data.status !== 'waiting') {
+                    alert("Game đã bắt đầu hoặc kết thúc!");
+                    return;
+                }
+                if (data.players.length >= 6) {
+                    alert("Phòng đã đầy!");
+                    return;
+                }
+
+                if (data.players.some(p => p.uid === userId)) {
+                    enterRoom(roomId);
+                    return;
+                }
+
+                const newPlayer = {
+                    uid: userId,
+                    name: playerName,
+                    hand: [],
+                    isDead: false,
+                    turnsToTake: 1
+                };
+
+                ref.update({
+                    players: firebase.firestore.FieldValue.arrayUnion(newPlayer),
+                    logs: firebase.firestore.FieldValue.arrayUnion(`${playerName} đã tham gia`)
+                }).then(() => enterRoom(roomId));
+            });
+        }
+
+        function enterRoom(roomId) {
+            currentRoomId = roomId;
+            document.getElementById('lobby-screen').classList.add('hidden');
+            document.getElementById('game-screen').classList.remove('hidden');
+            document.getElementById('display-room-id').innerText = roomId;
+
+            roomRef = getRoomsCollection().doc(roomId);
+
+            if (unsubscribe) unsubscribe();
+            unsubscribe = roomRef.onSnapshot(doc => {
+                if (!doc.exists) return;
+                gameState = doc.data();
+                renderGame();
+            }, err => console.error("Snapshot error:", err));
+        }
+
+        function renderGame() {
+            if (!gameState || !userId) return;
+
+            const me = gameState.players.find(p => p.uid === userId);
+            if (!me) return;
+
+            const isMyTurn = gameState.players[gameState.currentTurn]?.uid === userId && gameState.status === 'playing';
+
+            const startBtn = document.getElementById('start-btn');
+            if (gameState.hostId === userId && gameState.status === 'waiting') {
+                startBtn.classList.remove('hidden');
+            } else {
+                startBtn.classList.add('hidden');
+            }
+
+            const turnIndicator = document.getElementById('turn-indicator');
+            if (gameState.status === 'waiting') {
+                turnIndicator.innerText = "ĐANG CHỜ BẮT ĐẦU...";
+                turnIndicator.className = "bg-zinc-700 px-6 py-2 rounded-xl lucky-font text-xl";
+            } else if (gameState.status === 'finished') {
+                const winner = gameState.players.find(p => !p.isDead);
+                turnIndicator.innerText = `KẾT THÚC! ${winner ? winner.name.toUpperCase() : ''} THẮNG`;
+                turnIndicator.className = "bg-purple-600 px-6 py-2 rounded-xl lucky-font text-xl";
+            } else {
+                if (isMyTurn) {
+                    turnIndicator.innerText = `LƯỢT BẠN (${me.turnsToTake} LƯỢT CÒN)`;
+                    turnIndicator.className = "bg-red-600 px-6 py-2 rounded-xl lucky-font text-xl animate-pulse";
+                } else {
+                    const currentPlayer = gameState.players[gameState.currentTurn];
+                    turnIndicator.innerText = `LƯỢT: ${currentPlayer ? currentPlayer.name : '...'}`;
+                    turnIndicator.className = "bg-zinc-700 px-6 py-2 rounded-xl lucky-font text-xl";
+                }
+            }
+
+            const playersList = document.getElementById('players-list');
+            playersList.innerHTML = '';
+            gameState.players.forEach((p, idx) => {
+                const isTurn = gameState.currentTurn === idx;
+                const pDiv = document.createElement('div');
+                pDiv.className = `p-3 rounded-xl border-2 transition-all ${isTurn ? 'border-red-500 scale-105 bg-red-900/20 shadow-lg shadow-red-900/50' : 'border-zinc-700 bg-zinc-800'} ${p.isDead ? 'opacity-40 grayscale' : ''}`;
+                pDiv.innerHTML = `
+                <p class="text-xs font-bold truncate">${p.name}</p>
+                <div class="flex justify-between items-center mt-1">
+                    <span class="text-[10px] text-zinc-400">${p.hand.length} lá</span>
+                    ${p.isDead ? '💀' : (isTurn ? '🔥' : '⏳')}
+                </div>
+            `;
+                playersList.appendChild(pDiv);
+            });
+
+            const handEl = document.getElementById('my-hand');
+            handEl.innerHTML = '';
+            document.getElementById('hand-count').innerText = me.hand.length;
+            me.hand.forEach((cardType, idx) => {
+                const cardData = CARD_TYPES[cardType];
+                const cardBtn = document.createElement('button');
+                cardBtn.className = `w-24 h-36 p-2 rounded-lg pixel-border flex flex-col justify-between text-left card-animation ${cardData.color} shrink-0 disabled:opacity-50 disabled:hover:translate-y-0`;
+                cardBtn.disabled = !isMyTurn || me.isDead;
+                cardBtn.innerHTML = `
+                <p class="text-[10px] font-bold leading-tight uppercase">${cardData.name}</p>
+                <div class="text-[8px] mt-1 leading-none italic">${cardData.desc}</div>
+                <div class="mt-auto text-right text-xs">🐈</div>
+            `;
+                cardBtn.onclick = () => playCard(cardType, idx);
+                handEl.appendChild(cardBtn);
+            });
+
+            document.getElementById('deck-count').innerText = gameState.deck.length;
+            const lastDiscard = gameState.discardPile[gameState.discardPile.length - 1];
+            const discardPileEl = document.getElementById('discard-pile');
+            if (lastDiscard) {
+                const dData = CARD_TYPES[lastDiscard];
+                discardPileEl.className = `w-32 h-44 border-4 border-white rounded-xl flex flex-col items-center justify-center shadow-xl p-4 text-center ${dData.color}`;
+                document.getElementById('discard-name').innerText = dData.name;
+            } else {
+                discardPileEl.className = "w-32 h-44 bg-zinc-800 border-2 border-zinc-600 rounded-xl flex flex-col items-center justify-center shadow-xl p-2 text-center";
+                document.getElementById('discard-name').innerText = "Trống";
+            }
+
+            const logsEl = document.getElementById('game-logs');
+            logsEl.innerHTML = gameState.logs.slice(-20).reverse().map(l => `<div class="mb-1 border-l-2 border-red-500 pl-2 text-zinc-300">${l}</div>`).join('');
+        }
+
+        function generateInitialDeck() {
+            const types = [
+                ...Array(4).fill('ATTACK'),
+                ...Array(4).fill('SKIP'),
+                ...Array(4).fill('FAVOR'),
+                ...Array(4).fill('SHUFFLE'),
+                ...Array(5).fill('FUTURE'),
+                ...Array(4).fill('CAT_1'),
+                ...Array(4).fill('CAT_2'),
+            ];
+            return types.sort(() => Math.random() - 0.5);
+        }
+
+        async function startGame() {
+            if (!gameState || gameState.players.length < 2) {
+                alert("Cần ít nhất 2 người để chơi!");
+                return;
+            }
+
+            let deck = generateInitialDeck().sort(() => Math.random() - 0.5);
+            const players = gameState.players.map(p => {
+                const hand = ['DEFUSE'];
+                for (let i = 0; i < 4; i++) hand.push(deck.pop());
+                return { ...p, hand };
+            });
+
+            const kittens = Array(players.length - 1).fill('KITTEN');
+            const extraDefuses = Array(6 - players.length).fill('DEFUSE');
+            deck = [...deck, ...kittens, ...extraDefuses].sort(() => Math.random() - 0.5);
+
+            await roomRef.update({
+                status: 'playing',
+                players: players,
+                deck: deck,
+                logs: firebase.firestore.FieldValue.arrayUnion("GAME BẮT ĐẦU! Rút bài để sống sót.")
+            });
+        }
+
+        async function drawCard() {
+            if (!gameState || gameState.status !== 'playing' || !userId) return;
+            const meIdx = gameState.players.findIndex(p => p.uid === userId);
+            if (gameState.currentTurn !== meIdx) return;
+
+            const deck = [...gameState.deck];
+            const card = deck.pop();
+            const players = [...gameState.players];
+            const me = players[meIdx];
+            let logs = [...gameState.logs];
+
+            if (card === 'KITTEN') {
+                const defuseIdx = me.hand.indexOf('DEFUSE');
+                if (defuseIdx > -1) {
+                    me.hand.splice(defuseIdx, 1);
+                    logs.push(`💣 ${me.name} rút trúng Mèo Nổ nhưng đã GỠ BOM!`);
+                    const insertPos = Math.floor(Math.random() * deck.length);
+                    deck.splice(insertPos, 0, 'KITTEN');
+
+                    me.turnsToTake--;
+                    if (me.turnsToTake <= 0) {
+                        me.turnsToTake = 1;
+                        gameState.currentTurn = getNextLivingPlayerIndex(players, meIdx);
+                    }
+                } else {
+                    me.isDead = true;
+                    logs.push(`💥 BÙM! ${me.name} đã bị nổ tung.`);
+                    const survivors = players.filter(p => !p.isDead);
+                    if (survivors.length === 1) {
+                        logs.push(`🏆 ${survivors[0].name} LÀ NGƯỜI CHIẾN THẮNG!`);
+                        await roomRef.update({ status: 'finished', logs, players, deck });
+                        return;
+                    }
+                    gameState.currentTurn = getNextLivingPlayerIndex(players, meIdx);
+                }
+            } else {
+                me.hand.push(card);
+                me.turnsToTake--;
+                logs.push(`${me.name} đã rút 1 lá bài.`);
+                if (me.turnsToTake <= 0) {
+                    me.turnsToTake = 1;
+                    gameState.currentTurn = getNextLivingPlayerIndex(players, meIdx);
+                }
+            }
+
+            await roomRef.update({ players, deck, logs, currentTurn: gameState.currentTurn });
+        }
+
+        async function playCard(cardType, cardIdx) {
+            if (!gameState || gameState.status !== 'playing' || !userId) return;
+            const meIdx = gameState.players.findIndex(p => p.uid === userId);
+            const players = [...gameState.players];
+            const me = players[meIdx];
+            const logs = [...gameState.logs];
+            const discardPile = [...gameState.discardPile];
+            let deck = [...gameState.deck];
+
+            me.hand.splice(cardIdx, 1);
+            discardPile.push(cardType);
+            logs.push(`🃏 ${me.name} đã dùng: ${CARD_TYPES[cardType].name}`);
+
+            switch (cardType) {
+                case 'SKIP':
+                    me.turnsToTake = 1;
+                    gameState.currentTurn = getNextLivingPlayerIndex(players, meIdx);
+                    break;
+                case 'ATTACK':
+                    const nextIdx = getNextLivingPlayerIndex(players, meIdx);
+                    players[nextIdx].turnsToTake += 2;
+                    me.turnsToTake = 1;
+                    gameState.currentTurn = nextIdx;
+                    break;
+                case 'SHUFFLE':
+                    deck = deck.sort(() => Math.random() - 0.5);
+                    break;
+                case 'FUTURE':
+                    showFuture(deck.slice(-3).reverse());
+                    break;
+                case 'FAVOR':
+                    askFavor(players, meIdx);
+                    await roomRef.update({ players, deck, logs, discardPile });
+                    return;
+                default:
+                    break;
+            }
+
+            await roomRef.update({ players, deck, logs, discardPile, currentTurn: gameState.currentTurn });
+        }
+
+        function getNextLivingPlayerIndex(players, current) {
+            let next = (current + 1) % players.length;
+            while (players[next].isDead) {
+                next = (next + 1) % players.length;
+            }
+            return next;
+        }
+
+        function showFuture(cards) {
+            const modal = document.getElementById('modal-container');
+            const content = document.getElementById('modal-content');
+            modal.classList.remove('hidden');
+            content.innerHTML = `
+            <h3 class="lucky-font text-2xl mb-4 text-pink-500">NHÌN THẤY TƯƠNG LAI</h3>
+            <div class="flex justify-center space-x-2 mb-6">
+                ${cards.map(c => `
+                    <div class="w-20 h-28 p-2 rounded-lg border-2 border-white ${CARD_TYPES[c].color} flex flex-col justify-center text-center">
+                        <p class="text-[10px] font-bold uppercase">${CARD_TYPES[c].name}</p>
+                    </div>
+                `).join('')}
+            </div>
+            <button onclick="closeModal()" class="w-full bg-zinc-700 py-3 rounded-xl lucky-font">ĐÓNG</button>
+        `;
+        }
+
+        function askFavor(players, meIdx) {
+            const modal = document.getElementById('modal-container');
+            const content = document.getElementById('modal-content');
+            modal.classList.remove('hidden');
+
+            const others = players.filter((p, idx) => idx !== meIdx && !p.isDead);
+
+            content.innerHTML = `
+            <h3 class="lucky-font text-2xl mb-4 text-purple-500">YÊU CẦU ƯU ĐÃI</h3>
+            <p class="text-sm text-zinc-400 mb-4">Chọn một người để xin 1 lá bài ngẫu nhiên:</p>
+            <div class="space-y-2 mb-6">
+                ${others.map(p => `
+                    <button onclick="executeFavor('${p.uid}')" class="w-full bg-zinc-800 hover:bg-zinc-700 p-3 rounded-xl text-left border border-zinc-700 font-bold">
+                        ${p.name} (${p.hand.length} lá)
+                    </button>
+                `).join('')}
+            </div>
+        `;
+        }
+
+        async function executeFavor(targetUid) {
+            if (!gameState) return;
+            const players = [...gameState.players];
+            const me = players.find(p => p.uid === userId);
+            const target = players.find(p => p.uid === targetUid);
+
+            if (target && target.hand.length > 0) {
+                const randIdx = Math.floor(Math.random() * target.hand.length);
+                const card = target.hand.splice(randIdx, 1)[0];
+                me.hand.push(card);
+                gameState.logs.push(`🎁 ${me.name} đã lấy 1 lá bài từ ${target.name}`);
+            }
+
+            closeModal();
+            await roomRef.update({ players: gameState.players, logs: gameState.logs });
+        }
+
+        function closeModal() {
+            document.getElementById('modal-container').classList.add('hidden');
+        }
+
+    </script>
+</body>
+
+</html>

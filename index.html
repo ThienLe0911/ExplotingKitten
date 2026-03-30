@@ -11,17 +11,18 @@
     <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore-compat.js"></script>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Luckiest+Guy&family=Inter:wght@400;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@400;500;600;700;800&family=Nunito:wght@400;700;800&display=swap');
 
         body {
-            font-family: 'Inter', sans-serif;
+            font-family: 'Nunito', sans-serif;
             background-color: #1a1a1a;
             color: #fff;
             overflow-x: hidden;
         }
 
         .lucky-font {
-            font-family: 'Luckiest Guy', cursive;
+            font-family: 'Baloo 2', cursive;
+            font-weight: 700;
         }
 
         .card-animation {
@@ -177,6 +178,14 @@
 
             <div id="players-list" class="grid grid-cols-2 md:grid-cols-6 gap-2 mb-6"></div>
 
+            <div id="deck-preview" class="mb-6 bg-zinc-800 p-4 rounded-xl border border-zinc-700 hidden shadow-inner">
+                <div class="flex justify-between items-center mb-3">
+                    <h3 class="lucky-font text-lg text-zinc-300">CẤU HÌNH BỘ BÀI (Dự kiến theo số người chờ)</h3>
+                    <span class="text-xs text-zinc-400 italic">*Thêm tự động: 1 Gỡ Bom và <span id="preview-kitten-count">1</span> Mèo nổ các loại</span>
+                </div>
+                <div id="deck-preview-list" class="flex flex-wrap gap-2"></div>
+            </div>
+
             <div class="flex-grow grid grid-cols-1 md:grid-cols-3 gap-6 items-center">
                 <div class="flex flex-col items-center space-y-2">
                     <div id="draw-pile" onclick="drawCard()"
@@ -206,7 +215,10 @@
             <div class="mt-8 pb-4">
                 <div class="flex flex-col sm:flex-row justify-between items-center sm:items-end mb-3 gap-3">
                     <h3 class="lucky-font text-xl text-zinc-400">BÀI CỦA BẠN (<span id="hand-count">0</span>)</h3>
-                    <button id="play-selected-btn" onclick="executePlay()" class="hidden bg-green-600 hover:bg-green-700 border border-green-400 px-8 py-2 rounded-xl text-white font-bold lucky-font transition-transform active:scale-95 shadow-[0_0_15px_rgba(34,197,94,0.4)] tracking-widest text-lg">ĐÁNH BÀI</button>
+                    <div class="flex gap-2 items-center">
+                        <button onclick="sortHand()" class="bg-zinc-700 hover:bg-zinc-600 border border-zinc-600 px-4 py-2 rounded-xl text-white font-bold lucky-font transition-transform active:scale-95 tracking-widest text-sm shadow-md">SẮP XẾP BÀI</button>
+                        <button id="play-selected-btn" onclick="executePlay()" class="hidden bg-green-600 hover:bg-green-700 border border-green-400 px-8 py-2 rounded-xl text-white font-bold lucky-font transition-transform active:scale-95 shadow-[0_0_15px_rgba(34,197,94,0.4)] tracking-widest text-lg">ĐÁNH BÀI</button>
+                    </div>
                 </div>
                 <div id="my-hand" class="flex flex-wrap justify-center gap-2 overflow-x-auto py-6 min-h-[180px]"></div>
             </div>
@@ -243,16 +255,30 @@
         let gameState = null;
         let isInitialized = false;
         let selectedCardIndexes = [];
+        let defusingInterval = null;
 
         const CARD_TYPES = {
             KITTEN: { name: 'Mèo Nổ', color: 'bg-red-600 text-white', desc: 'Bạn bị loại trừ khi rút lá này (trừ khi có Gỡ Bom)!', isAction: false },
             DEFUSE: { name: 'Gỡ Bom', color: 'bg-green-500 text-white', desc: 'Vô hiệu hóa Mèo Nổ.', isAction: false },
-            ATTACK: { name: 'Tấn Công', color: 'bg-orange-600 text-white', desc: 'Người tiếp theo rút 2 lần.', isAction: true },
+            ATTACK: { name: 'Tấn Công 2x', color: 'bg-orange-600 text-white', desc: 'Người tiếp theo rút 2 lần.', isAction: true },
             SKIP: { name: 'Bỏ Qua', color: 'bg-blue-500 text-white', desc: 'Kết thúc lượt mà không cần rút.', isAction: true },
             FAVOR: { name: 'Ưu Đãi', color: 'bg-purple-500 text-white', desc: 'Chọn 1 người bắt họ đưa 1 lá bài.', isAction: true },
             SHUFFLE: { name: 'Xáo Bài', color: 'bg-yellow-500 text-black', desc: 'Xáo trộn lại chồng bài.', isAction: true },
             SEE_THE_FUTURE: { name: 'Nhìn Tương Lai', color: 'bg-pink-500 text-white', desc: 'Xem 3 lá bài đầu.', isAction: true },
             NOPE: { name: 'Không Đâu', color: 'bg-red-500 text-white', desc: 'Chặn bất kỳ lá bài hành động nào.', isAction: true },
+            REVERSE: { name: 'Đảo Chiều', color: 'bg-indigo-600 text-white', desc: 'Đảo chiều chơi và qua lượt.', isAction: true },
+            TARGETED_ATTACK: { name: 'Đâm Lén', color: 'bg-orange-700 text-white', desc: 'Chọn 1 người rút 2 lần.', isAction: true },
+            PERSONAL_ATTACK: { name: 'Tự Vả', color: 'bg-orange-800 text-white', desc: 'Tự rút 3 lần liên tiếp.', isAction: true },
+            SUPER_SKIP: { name: 'Siêu Bỏ Qua', color: 'bg-blue-600 text-white', desc: 'Bỏ qua TẤT CẢ các lượt đang có.', isAction: true },
+            DRAW_FROM_BOTTOM: { name: 'Rút Đáy', color: 'bg-cyan-600 text-white', desc: 'Rút lá dưới cùng nọc và kết thúc.', isAction: true },
+            SWAP_TOP_BOTTOM: { name: 'Đổi Đầu Đuôi', color: 'bg-teal-600 text-white', desc: 'Đổi lá bài trên cùng và dưới cùng.', isAction: true },
+            ALTER_THE_FUTURE: { name: 'Đổi Tương Lai', color: 'bg-fuchsia-600 text-white', desc: 'Xem và xếp lại 3 lá đầu nọc.', isAction: true },
+            CLONE: { name: 'Nhân Bản', color: 'bg-emerald-500 text-white', desc: 'Sao chép hiệu ứng Action Card trước đó.', isAction: true },
+            FERAL_CAT: { name: 'Mèo Hoang', color: 'bg-zinc-600 text-white', desc: 'Ghép được với mọi lá mèo thường.', isAction: false },
+            IMPLODING_KITTEN: { name: 'Mèo Sập (Úp)', color: 'bg-black text-white', desc: 'Sắp xếp lại lá này Cửa Ngửa vào nọc!', isAction: false },
+            IMPLODING_KITTEN_ACTIVE: { name: 'Mèo Sập (Ngửa)', color: 'bg-black text-red-500 font-bold', desc: 'BÙM! Không thể GỠ BOM!', isAction: false },
+            STREAKING_KITTEN: { name: 'Mèo Chạy Rông', color: 'bg-amber-600 text-white', desc: 'Cho phép ôm 1 Mèo Nổ trên tay vô hình.', isAction: false },
+            CURSE_OF_THE_CAT_BUTT: { name: 'Lời Nguyền Mù', color: 'bg-stone-500 text-white', desc: 'Úp bài 1 người chơi cho đến khi họ bốc bài!', isAction: true },
             TACOCAT: { name: 'Mèo Taco', color: 'bg-amber-400 text-black', desc: 'Không có tác dụng.', isAction: false },
             HAIRY_POTATO_CAT: { name: 'Mèo Kho.Tây Lông', color: 'bg-orange-300 text-black', desc: 'Không có tác dụng.', isAction: false },
             CATTERMELON: { name: 'Mèo Dưa Hấu', color: 'bg-green-400 text-black', desc: 'Không có tác dụng.', isAction: false },
@@ -262,6 +288,9 @@
 
         const DECK_COMPOSITION = {
             ATTACK: 4, SKIP: 4, FAVOR: 4, SHUFFLE: 4, SEE_THE_FUTURE: 5, NOPE: 5,
+            REVERSE: 4, TARGETED_ATTACK: 3, PERSONAL_ATTACK: 4, SUPER_SKIP: 4, 
+            DRAW_FROM_BOTTOM: 4, SWAP_TOP_BOTTOM: 3, ALTER_THE_FUTURE: 4, CLONE: 3, FERAL_CAT: 4,
+            STREAKING_KITTEN: 1, CURSE_OF_THE_CAT_BUTT: 2,
             TACOCAT: 4, HAIRY_POTATO_CAT: 4, CATTERMELON: 4, RAINBOW_RALPHING_CAT: 4, BEARD_CAT: 4
         };
 
@@ -435,9 +464,37 @@
             if (unsubscribe) unsubscribe();
             unsubscribe = roomRef.onSnapshot(doc => {
                 if (!doc.exists) return;
-                gameState = doc.data();
+                const newData = doc.data();
+                if (gameState && newData.theftEvent && 
+                    (!gameState.theftEvent || gameState.theftEvent.timestamp !== newData.theftEvent.timestamp)) {
+                    if (newData.theftEvent.victimUid === userId) {
+                        showVictimAlert(newData.theftEvent);
+                    }
+                }
+                gameState = newData;
                 renderGame();
             }, err => console.error("Snapshot error:", err));
+        }
+
+        function showVictimAlert(event) {
+            const modal = document.getElementById('modal-container');
+            const content = document.getElementById('modal-content');
+            modal.classList.remove('hidden');
+
+            const cInfo = CARD_TYPES[event.cardType];
+
+            content.innerHTML = `
+                <h3 class="lucky-font text-2xl mb-4 text-center text-red-500">BÁO ĐỘNG ĐỎ!</h3>
+                <p class="text-sm text-center text-zinc-300 mb-4"><b>${event.thiefName}</b> vừa nẫng tay trên lá bài này của bạn:</p>
+                <div class="flex justify-center mb-6 mt-4">
+                    <div class="w-40 h-56 p-4 rounded-xl pixel-border ${cInfo.color} flex flex-col justify-between text-center card-animation animate-bounce">
+                        <p class="text-sm font-bold uppercase tracking-wider">${cInfo.name}</p>
+                        <div class="text-xs italic mt-2">${cInfo.desc}</div>
+                        <div class="text-4xl mt-auto">🐈</div>
+                    </div>
+                </div>
+                <button onclick="closeModal()" class="w-full bg-zinc-700 hover:bg-zinc-600 py-3 rounded-xl lucky-font transition-colors">CAY THẬT!</button>
+            `;
         }
 
         function renderGame() {
@@ -449,10 +506,40 @@
             const isMyTurn = gameState.players[gameState.currentTurn]?.uid === userId && gameState.status === 'playing';
 
             const startBtn = document.getElementById('start-btn');
-            if (gameState.hostId === userId && gameState.status === 'waiting') {
+                if (gameState.hostId === userId && gameState.status === 'waiting') {
                 startBtn.classList.remove('hidden');
             } else {
                 startBtn.classList.add('hidden');
+            }
+
+            if (gameState.status === 'defusing' && !defusingInterval) {
+                showDefusingPopup();
+                defusingInterval = setInterval(() => {
+                    const now = Date.now();
+                    const remaining = Math.max(0, gameState.defuseEndTime - now);
+                    const bar = document.getElementById('defuse-bar-inner');
+                    const text = document.getElementById('defuse-time-text');
+                    if (bar) {
+                        bar.style.width = `${(remaining / 10000) * 100}%`;
+                        if (remaining < 3000) bar.classList.replace('bg-red-600', 'bg-black');
+                    }
+                    if (text) text.innerText = (remaining / 1000).toFixed(1) + 's';
+
+                    if (remaining <= 0) {
+                        clearInterval(defusingInterval);
+                        defusingInterval = null;
+                        if (gameState.players[gameState.defusingPlayer].uid === userId) {
+                            explodeTimeout();
+                        }
+                    }
+                }, 50);
+            } else if (gameState.status !== 'defusing' && defusingInterval) {
+                clearInterval(defusingInterval);
+                defusingInterval = null;
+                const modal = document.getElementById('modal-container');
+                if (!modal.classList.contains('hidden') && document.getElementById('defuse-bar-inner')) {
+                    closeModal();
+                }
             }
 
             const turnIndicator = document.getElementById('turn-indicator');
@@ -501,14 +588,21 @@
                 const cardBtn = document.createElement('button');
                 const isSelected = selectedCardIndexes.includes(idx);
                 
-                cardBtn.className = `w-24 h-36 p-2 rounded-lg pixel-border flex flex-col justify-between text-left card-animation ${cardData.color} shrink-0 disabled:opacity-50 disabled:hover:translate-y-0 ${isSelected ? '-translate-y-6 ring-4 ring-yellow-400 shadow-[0_10px_20px_rgba(250,204,21,0.5)] z-40' : ''}`;
-                cardBtn.disabled = !isMyTurn || me.isDead;
-                cardBtn.innerHTML = `
-                <p class="text-[10px] font-bold leading-tight uppercase">${cardData.name}</p>
-                <div class="text-[8px] mt-1 leading-none italic">${cardData.desc}</div>
-                <div class="mt-auto text-right text-xs">🐈</div>
-            `;
-                cardBtn.onclick = () => toggleCardSelection(idx);
+                if (me.isBlind) {
+                    cardBtn.className = `w-24 h-36 p-2 rounded-lg pixel-border flex flex-col justify-center items-center text-center bg-stone-900 border-2 ${isSelected ? 'border-yellow-400 -translate-y-6 ring-4 ring-yellow-400 shadow-[0_10px_20px_rgba(250,204,21,0.5)] z-40' : 'border-stone-700'} shrink-0 disabled:opacity-50 disabled:hover:translate-y-0 text-white`;
+                    cardBtn.innerHTML = `<div class="text-4xl">🕳️</div>`;
+                    cardBtn.disabled = !isMyTurn || me.isDead;
+                    cardBtn.onclick = () => toggleCardSelection(idx);
+                } else {
+                    cardBtn.className = `w-24 h-36 p-2 rounded-lg pixel-border flex flex-col justify-between text-left card-animation ${cardData.color} shrink-0 disabled:opacity-50 disabled:hover:translate-y-0 ${isSelected ? '-translate-y-6 ring-4 ring-yellow-400 shadow-[0_10px_20px_rgba(250,204,21,0.5)] z-40' : ''}`;
+                    cardBtn.disabled = !isMyTurn || me.isDead;
+                    cardBtn.innerHTML = `
+                    <p class="text-[10px] font-bold leading-tight uppercase">${cardData.name}</p>
+                    <div class="text-[8px] mt-1 leading-none italic">${cardData.desc}</div>
+                    <div class="mt-auto text-right text-xs">🐈</div>
+                `;
+                    cardBtn.onclick = () => toggleCardSelection(idx);
+                }
                 handEl.appendChild(cardBtn);
             });
 
@@ -536,6 +630,36 @@
 
             const logsEl = document.getElementById('game-logs');
             logsEl.innerHTML = gameState.logs.slice(-20).reverse().map(l => `<div class="mb-1 border-l-2 border-red-500 pl-2 text-zinc-300">${l}</div>`).join('');
+
+            const deckPreview = document.getElementById('deck-preview');
+            if (gameState.status === 'waiting' && gameState.players.length > 0) {
+                deckPreview.classList.remove('hidden');
+                
+                const expectedCounts = { ...DECK_COMPOSITION };
+                const pCount = gameState.players.length;
+                const extraDefuseCount = Math.max(0, Math.min(1, 6 - pCount)); // Không >= 2 defuse
+                expectedCounts['DEFUSE'] = (expectedCounts['DEFUSE'] || 0) + extraDefuseCount;
+                
+                const kCount = pCount - 1;
+                document.getElementById('preview-kitten-count').innerText = kCount;
+                if (kCount > 0) {
+                    expectedCounts['KITTEN'] = (expectedCounts['KITTEN'] || 0) + (kCount > 1 ? kCount - 1 : 0);
+                    expectedCounts['IMPLODING_KITTEN'] = (expectedCounts['IMPLODING_KITTEN'] || 0) + 1;
+                }
+                
+                let previewHTML = '';
+                for (const [t, c] of Object.entries(expectedCounts)) {
+                    if (c > 0 && CARD_TYPES[t]) {
+                        previewHTML += `<div class="bg-zinc-700 px-3 py-1.5 rounded-lg text-xs font-bold ${CARD_TYPES[t].color} bg-opacity-30 border border-zinc-600 flex items-center shadow-sm">
+                            <span class="mr-2">${CARD_TYPES[t].name}</span>
+                            <span class="text-white bg-black/60 px-2 py-0.5 rounded-full">${c}</span>
+                        </div>`;
+                    }
+                }
+                document.getElementById('deck-preview-list').innerHTML = previewHTML;
+            } else {
+                deckPreview.classList.add('hidden');
+            }
         }
 
         function generateInitialDeck() {
@@ -556,61 +680,87 @@
             const players = gameState.players.map(p => {
                 const hand = ['DEFUSE'];
                 for (let i = 0; i < 4; i++) hand.push(deck.pop());
-                return { ...p, hand };
+                return { ...p, hand, isBlind: false };
             });
 
-            const kittens = Array(players.length - 1).fill('KITTEN');
-            const extraDefuses = Array(6 - players.length).fill('DEFUSE');
+            const kittensCount = players.length - 1;
+            const kittens = Array(kittensCount > 1 ? kittensCount - 1 : 0).fill('KITTEN');
+            if (kittensCount >= 1) kittens.push('IMPLODING_KITTEN');
+            
+            const extraDefuseCount = Math.max(0, Math.min(1, 6 - players.length));
+            const extraDefuses = Array(extraDefuseCount).fill('DEFUSE');
             deck = [...deck, ...kittens, ...extraDefuses].sort(() => Math.random() - 0.5);
 
             await roomRef.update({
                 status: 'playing',
                 players: players,
                 deck: deck,
+                playDirection: 1,
                 logs: firebase.firestore.FieldValue.arrayUnion("GAME BẮT ĐẦU! Rút bài để sống sót.")
             });
         }
 
-        async function drawCard() {
+        async function drawCard(fromBottom = false) {
             if (!gameState || gameState.status !== 'playing' || !userId) return;
             const meIdx = gameState.players.findIndex(p => p.uid === userId);
             if (gameState.currentTurn !== meIdx) return;
 
-            const deck = [...gameState.deck];
-            const card = deck.pop();
             const players = [...gameState.players];
             const me = players[meIdx];
+            
+            if (me.isBlind) {
+                me.isBlind = false;
+            }
+
+            const deck = [...gameState.deck];
+            const card = fromBottom ? deck.shift() : deck.pop();
             let logs = [...gameState.logs];
 
             let isExploding = false;
             let isDefused = false;
 
-            if (card === 'KITTEN') {
-                isExploding = true;
-                const defuseIdx = me.hand.indexOf('DEFUSE');
-                if (defuseIdx > -1) {
-                    isDefused = true;
-                    me.hand.splice(defuseIdx, 1);
-                    logs.push(`💣 ${me.name} rút trúng Mèo Nổ nhưng đã GỠ BOM!`);
-                    const insertPos = Math.floor(Math.random() * deck.length);
-                    deck.splice(insertPos, 0, 'KITTEN');
+            if (!card) return;
 
+            if (card === 'IMPLODING_KITTEN_ACTIVE') {
+                me.isDead = true;
+                logs.push(`💀 BÙM! ${me.name} dẫm phải MÈO NỔ SẬP (Ngửa) và tử trận không thể cứu chữa!`);
+                const survivors = players.filter(p => !p.isDead);
+                if (survivors.length === 1) {
+                    showDrawnCardPopup(card, true, false);
+                    logs.push(`🏆 ${survivors[0].name} LÀ NGƯỜI CHIẾN THẮNG!`);
+                    await roomRef.update({ status: 'finished', logs, players, deck });
+                    return;
+                }
+                gameState.currentTurn = getNextLivingPlayerIndex(players, meIdx);
+            } else if (card === 'IMPLODING_KITTEN') {
+                logs.push(`⚠️ ${me.name} rút trúng MÈO NỔ SẬP (Úp)! Vận mệnh đã cài nó Cửa Ngửa vào nọc!`);
+                const insertPos = Math.floor(Math.random() * deck.length);
+                deck.splice(insertPos, 0, 'IMPLODING_KITTEN_ACTIVE');
+                
+                me.turnsToTake--;
+                if (me.turnsToTake <= 0) {
+                    me.turnsToTake = 1;
+                    gameState.currentTurn = getNextLivingPlayerIndex(players, meIdx);
+                }
+            } else if (card === 'KITTEN') {
+                if (me.hand.includes('STREAKING_KITTEN')) {
+                    me.hand.push('KITTEN');
                     me.turnsToTake--;
+                    logs.push(`😎 ${me.name} rút trúng Mèo Nổ nhưng nhờ có Mèo Chạy Rông nên ôm luôn quả bom trên tay!`);
                     if (me.turnsToTake <= 0) {
                         me.turnsToTake = 1;
                         gameState.currentTurn = getNextLivingPlayerIndex(players, meIdx);
                     }
                 } else {
-                    me.isDead = true;
-                    logs.push(`💥 BÙM! ${me.name} đã bị nổ tung.`);
-                    const survivors = players.filter(p => !p.isDead);
-                    if (survivors.length === 1) {
-                        showDrawnCardPopup(card, true, false);
-                        logs.push(`🏆 ${survivors[0].name} LÀ NGƯỜI CHIẾN THẮNG!`);
-                        await roomRef.update({ status: 'finished', logs, players, deck });
-                        return;
-                    }
-                    gameState.currentTurn = getNextLivingPlayerIndex(players, meIdx);
+                    logs.push(`⚠️ BÁO ĐỘNG! ${me.name} vừa bốc phải MÈO NỔ!! Tử thần cho 10 giây cuối cùng...`);
+                    await roomRef.update({ 
+                        players, deck, logs, 
+                        currentTurn: gameState.currentTurn,
+                        status: 'defusing',
+                        defusingPlayer: meIdx,
+                        defuseEndTime: Date.now() + 10000 
+                    });
+                    return;
                 }
             } else {
                 me.hand.push(card);
@@ -622,10 +772,75 @@
                 }
             }
 
-            // Show Popup locally to the player drawing the card
             showDrawnCardPopup(card, isExploding, isDefused);
 
             await roomRef.update({ players, deck, logs, currentTurn: gameState.currentTurn });
+        }
+
+        async function playDefuseCard(defuseIdx) {
+            const players = [...gameState.players];
+            const meIdx = gameState.defusingPlayer;
+            const me = players[meIdx];
+            const deck = [...gameState.deck];
+            const logs = [...gameState.logs];
+
+            me.hand.splice(defuseIdx, 1);
+            logs.push(`🏃💨 PHÚT CHÓT! ${me.name} tung lá Cắt Cáp GỠ BOM thành công!`);
+            
+            // Insert kitten randomly
+            const insertPos = Math.floor(Math.random() * deck.length);
+            deck.splice(insertPos, 0, 'KITTEN');
+
+            me.turnsToTake--;
+            let nextTurn = gameState.currentTurn;
+            if (me.turnsToTake <= 0) {
+                me.turnsToTake = 1;
+                nextTurn = getNextLivingPlayerIndex(players, meIdx);
+            }
+
+            closeModal();
+            showDrawnCardPopup('KITTEN', true, true);
+
+            await roomRef.update({ 
+                status: 'playing', 
+                players, 
+                deck, 
+                logs, 
+                currentTurn: nextTurn,
+                defuseEndTime: null,
+                defusingPlayer: null,
+                discardPile: [...gameState.discardPile, 'DEFUSE']
+            });
+        }
+
+        async function explodeTimeout() {
+            if (gameState.status !== 'defusing') return;
+            const players = [...gameState.players];
+            const meIdx = gameState.defusingPlayer;
+            const me = players[meIdx];
+            const logs = [...gameState.logs];
+
+            me.isDead = true;
+            me.hand.splice(me.hand.indexOf('KITTEN'), 1);
+            logs.push(`💥 BÙM TÓC TIÊN! ${me.name} ĐÃ NỔ BANH XÁC DO KHÔNG CÓ GỠ BOM HOẶC QUÁ GIỜ!`);
+            
+            const survivors = players.filter(p => !p.isDead);
+            if (survivors.length === 1) {
+                logs.push(`🏆 ${survivors[0].name} LÀ NGƯỜI CHIẾN THẮNG!`);
+                await roomRef.update({ status: 'finished', logs, players, deck: gameState.deck });
+                return;
+            }
+            
+            await roomRef.update({ 
+                status: 'playing', 
+                players, 
+                logs, 
+                currentTurn: getNextLivingPlayerIndex(players, meIdx),
+                defuseEndTime: null,
+                defusingPlayer: null
+            });
+            closeModal();
+            showDrawnCardPopup('KITTEN', true, false);
         }
 
         function toggleCardSelection(idx) {
@@ -638,6 +853,38 @@
             renderGame();
         }
 
+        async function sortHand() {
+            if (!gameState || !userId || gameState.status !== 'playing') return;
+            const players = [...gameState.players];
+            const meIdx = players.findIndex(p => p.uid === userId);
+            
+            // Cannot sort if dead
+            if (players[meIdx].isDead) return;
+
+            // Define sorting priority
+            const getPriority = (cardType) => {
+                if (cardType === 'DEFUSE') return 1;
+                if (cardType === 'KITTEN' || cardType === 'IMPLODING_KITTEN') return 2;
+                if (CARD_TYPES[cardType]?.isAction) return 3;
+                return 4;
+            };
+
+            players[meIdx].hand.sort((a, b) => {
+                const typeA = getPriority(a);
+                const typeB = getPriority(b);
+                if (typeA !== typeB) return typeA - typeB;
+                // Nếu cùng nhóm ưu tiên, dùng tên lá bài
+                const nameA = CARD_TYPES[a]?.name || a;
+                const nameB = CARD_TYPES[b]?.name || b;
+                return nameA.localeCompare(nameB);
+            });
+
+            selectedCardIndexes = []; // clear index map since indices changed
+            
+            // To ensure smooth UI, we can just save it to firebase
+            await roomRef.update({ players });
+        }
+
         async function executePlay() {
             if (!gameState || gameState.status !== 'playing' || !userId) return;
             const meIdx = gameState.players.findIndex(p => p.uid === userId);
@@ -648,6 +895,11 @@
             const indexes = [...selectedCardIndexes].sort((a,b) => b-a);
             const types = indexes.map(i => me.hand[i]);
             const isNopeOnly = types.length === 1 && types[0] === 'NOPE';
+
+            if (gameState.status === 'defusing') {
+                showToast("Đang có người bị Mèo Nổ, không thể đánh bài khác!");
+                return;
+            }
 
             if (gameState.currentTurn !== meIdx && !isNopeOnly) {
                 showToast("Chưa tới lượt của bạn!");
@@ -662,16 +914,23 @@
                 }
                 await playSingleActionCard(type, indexes[0]);
             } else if (types.length === 2) {
-                if (types[0] === types[1] && !CARD_TYPES[types[0]].isAction && types[0] !== 'KITTEN' && types[0] !== 'DEFUSE') {
+                const isMatch = (types[0] === types[1] || types[0] === 'FERAL_CAT' || types[1] === 'FERAL_CAT');
+                const validBase = (!CARD_TYPES[types[0]].isAction && types[0] !== 'KITTEN' && types[0] !== 'DEFUSE') || 
+                                  (!CARD_TYPES[types[1]].isAction && types[1] !== 'KITTEN' && types[1] !== 'DEFUSE');
+                if (isMatch && validBase) {
                      askCombo2Target(indexes);
                 } else {
-                     showToast("Cần 2 lá bài THƯỜNG giống nhau!");
+                     showToast("Cần 2 lá bài THƯỜNG giống nhau (hoặc kết hợp Mèo Hoang)!");
                 }
             } else if (types.length === 3) {
-                if (types[0] === types[1] && types[1] === types[2] && !CARD_TYPES[types[0]].isAction && types[0] !== 'KITTEN' && types[0] !== 'DEFUSE') {
+                const nonFeral = types.find(t => t !== 'FERAL_CAT');
+                const isMatch = types.every(t => t === 'FERAL_CAT' || t === nonFeral);
+                const validBase = nonFeral ? (!CARD_TYPES[nonFeral].isAction && nonFeral !== 'KITTEN' && nonFeral !== 'DEFUSE') : true;
+
+                if (isMatch && validBase) {
                      askCombo3Target(indexes);
                 } else {
-                     showToast("Cần 3 lá bài THƯỜNG giống nhau!");
+                     showToast("Cần 3 lá bài THƯỜNG giống nhau (hoặc kết hợp Mèo Hoang)!");
                 }
             } else if (types.length === 5) {
                 const uniqueTypes = new Set(types);
@@ -691,49 +950,113 @@
             const meIdx = gameState.players.findIndex(p => p.uid === userId);
             const players = [...gameState.players];
             const me = players[meIdx];
-            const logs = [...gameState.logs];
-            const discardPile = [...gameState.discardPile];
+            let logs = [...gameState.logs];
+            let discardPile = [...gameState.discardPile];
             let deck = [...gameState.deck];
 
             me.hand.splice(cardIdx, 1);
             discardPile.push(cardType);
-            logs.push(`🃏 ${me.name} đã dùng: ${CARD_TYPES[cardType].name}`);
 
-            switch (cardType) {
-                case 'SKIP':
-                    me.turnsToTake = 1;
-                    gameState.currentTurn = getNextLivingPlayerIndex(players, meIdx);
-                    break;
-                case 'ATTACK':
-                    const nextIdx = getNextLivingPlayerIndex(players, meIdx);
-                    players[nextIdx].turnsToTake += 2;
-                    me.turnsToTake = 1;
-                    gameState.currentTurn = nextIdx;
-                    break;
-                case 'SHUFFLE':
-                    deck = deck.sort(() => Math.random() - 0.5);
-                    break;
-                case 'SEE_THE_FUTURE':
-                    showFuture(deck.slice(-3).reverse());
-                    break;
-                case 'NOPE':
-                    logs.push(`🚫 NOPE! Thẻ NOPE hiện chỉ có tác dụng chặn cơ bản, người chơi hãy tự thoả thuận và chat nhé!`);
-                    break;
-                case 'FAVOR':
-                    askFavor(players, meIdx);
-                    await roomRef.update({ players, deck, logs, discardPile });
-                    return;
-                default:
-                    break;
+            async function executeAction(type) {
+                let currentType = type;
+                if (currentType === 'CLONE') {
+                    let topAction = [...discardPile].reverse().find(c => CARD_TYPES[c].isAction && c !== 'CLONE' && c !== 'NOPE');
+                    if (!topAction) {
+                        logs.push(`⚠️ ${me.name} tung Nhân Bản nhưng không có bài để chuyển hóa. Phí của!`);
+                        return false; 
+                    }
+                    logs.push(`🧬 Nhân Bản biến thành ${CARD_TYPES[topAction].name}!`);
+                    currentType = topAction;
+                }
+
+                switch (currentType) {
+                    case 'SKIP':
+                        me.turnsToTake = 1;
+                        gameState.currentTurn = getNextLivingPlayerIndex(players, meIdx);
+                        break;
+                    case 'ATTACK':
+                        const nextIdx = getNextLivingPlayerIndex(players, meIdx);
+                        players[nextIdx].turnsToTake += 2;
+                        me.turnsToTake = 1;
+                        gameState.currentTurn = nextIdx;
+                        break;
+                    case 'SHUFFLE':
+                        deck = deck.sort(() => Math.random() - 0.5);
+                        break;
+                    case 'SEE_THE_FUTURE':
+                        showFuture(deck.slice(-3).reverse());
+                        break;
+                    case 'NOPE':
+                        logs.push(`🚫 NOPE! Thẻ NOPE hiện chỉ có tác dụng chặn cơ bản, người chơi hãy tự thoả thuận và chat nhé!`);
+                        break;
+                    case 'REVERSE':
+                        let newDir = (gameState.playDirection || 1) * -1;
+                        gameState.playDirection = newDir;
+                        me.turnsToTake = 1;
+                        gameState.currentTurn = getNextLivingPlayerIndex(players, meIdx, newDir);
+                        break;
+                    case 'TARGETED_ATTACK':
+                        askTargetedAttackTarget(players, meIdx);
+                        await roomRef.update({ players, deck, logs, discardPile });
+                        return true;
+                    case 'PERSONAL_ATTACK':
+                        me.turnsToTake += 2;
+                        break;
+                    case 'SUPER_SKIP':
+                        me.turnsToTake = 1;
+                        gameState.currentTurn = getNextLivingPlayerIndex(players, meIdx);
+                        break;
+                    case 'SWAP_TOP_BOTTOM':
+                        if (deck.length >= 2) {
+                            const top = deck.pop();
+                            const bottom = deck.shift();
+                            deck.push(bottom);
+                            deck.unshift(top);
+                        }
+                        break;
+                    case 'ALTER_THE_FUTURE':
+                        showAlterTheFuture(deck.slice(-3).reverse());
+                        await roomRef.update({ players, deck, logs, discardPile });
+                        return true;
+                    case 'CURSE_OF_THE_CAT_BUTT':
+                        askCurseTarget(players, meIdx);
+                        await roomRef.update({ players, deck, logs, discardPile });
+                        return true;
+                    case 'DRAW_FROM_BOTTOM':
+                        await roomRef.update({ 
+                            players, deck, logs, discardPile, 
+                            currentTurn: gameState.currentTurn,
+                            playDirection: gameState.playDirection || 1 
+                        });
+                        await drawCard(true);
+                        return true;
+                    case 'FAVOR':
+                        askFavor(players, meIdx);
+                        await roomRef.update({ players, deck, logs, discardPile });
+                        return true;
+                    default:
+                        break;
+                }
+                return false;
             }
 
-            await roomRef.update({ players, deck, logs, discardPile, currentTurn: gameState.currentTurn });
+            logs.push(`🃏 ${me.name} đã dùng: ${CARD_TYPES[cardType].name}`);
+            const shouldSkipFinalUpdate = await executeAction(cardType);
+            
+            if (!shouldSkipFinalUpdate) {
+                await roomRef.update({ 
+                    players, deck, logs, discardPile, 
+                    currentTurn: gameState.currentTurn,
+                    playDirection: gameState.playDirection || 1 
+                });
+            }
         }
 
-        function getNextLivingPlayerIndex(players, current) {
-            let next = (current + 1) % players.length;
+        function getNextLivingPlayerIndex(players, current, forceDirection = 0) {
+            const direction = forceDirection || gameState.playDirection || 1;
+            let next = (current + direction + players.length) % players.length;
             while (players[next].isDead) {
-                next = (next + 1) % players.length;
+                next = (next + direction + players.length) % players.length;
             }
             return next;
         }
@@ -753,6 +1076,153 @@
             </div>
             <button onclick="closeModal()" class="w-full bg-zinc-700 py-3 rounded-xl lucky-font">ĐÓNG</button>
         `;
+        }
+
+        let alterFutureSelection = [];
+        let alterFutureCards = [];
+
+        function showAlterTheFuture(cards) {
+            alterFutureSelection = [];
+            alterFutureCards = [...cards];
+            renderAlterFutureModal();
+        }
+
+        function renderAlterFutureModal() {
+            const modal = document.getElementById('modal-container');
+            const content = document.getElementById('modal-content');
+            modal.classList.remove('hidden');
+
+            const unselected = alterFutureCards.map((c, i) => alterFutureSelection.includes(i) ? null : {c, i}).filter(x => x !== null);
+            const selected = alterFutureSelection.map(i => alterFutureCards[i]);
+
+            content.innerHTML = `
+                <h3 class="lucky-font text-2xl mb-4 text-fuchsia-500">ĐỔI TƯƠNG LAI</h3>
+                <p class="text-sm text-zinc-400 mb-2">Click để xếp bài. <b>Càng trái càng ở trên nọc</b></p>
+                
+                <div class="mb-4">
+                    <p class="text-xs text-fuchsia-300 mb-1">Thứ tự mới (Sẽ đổi):</p>
+                    <div class="flex space-x-2 min-h-24 border border-dashed border-zinc-600 rounded-lg p-2 items-center justify-center">
+                        ${selected.length === 0 ? '<span class="text-zinc-600 text-xs">Trống</span>' : selected.map((c, idx) => `
+                            <div class="w-14 h-20 bg-zinc-800 rounded-md border border-fuchsia-500 flex flex-col justify-center text-center cursor-pointer" onclick="undoAlterFuture(${idx})">
+                                <p class="text-[9px] font-bold uppercase text-white">${CARD_TYPES[c].name}</p>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+
+                <div class="mb-6">
+                    <p class="text-xs text-zinc-400 mb-1">Các lá bài ban đầu (Nhấn để chọn):</p>
+                    <div class="flex space-x-2 justify-center">
+                        ${unselected.map(obj => `
+                            <div class="w-14 h-20 rounded-lg border-2 border-white ${CARD_TYPES[obj.c].color} flex flex-col justify-center text-center cursor-pointer transition-transform hover:scale-105" onclick="selectAlterFuture(${obj.i})">
+                                <p class="text-[9px] font-bold uppercase">${CARD_TYPES[obj.c].name}</p>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+                
+                <button onclick="submitAlterFuture()" class="w-full bg-fuchsia-600 hover:bg-fuchsia-700 py-3 rounded-xl lucky-font" ${alterFutureSelection.length < alterFutureCards.length ? 'disabled style="opacity:0.5"' : ''}>XÁC NHẬN TƯƠNG LAI</button>
+            `;
+        }
+
+        function selectAlterFuture(originalIndex) {
+            alterFutureSelection.push(originalIndex);
+            renderAlterFutureModal();
+        }
+
+        function undoAlterFuture(selectionIndex) {
+            alterFutureSelection.splice(selectionIndex, 1);
+            renderAlterFutureModal();
+        }
+
+        async function submitAlterFuture() {
+            if (alterFutureSelection.length < alterFutureCards.length) return;
+            const newOrder = alterFutureSelection.map(i => alterFutureCards[i]);
+
+            const deck = [...gameState.deck];
+            const logs = [...gameState.logs];
+            const meIdx = gameState.players.findIndex(p => p.uid === userId);
+            
+            for (let i = 0; i < newOrder.length; i++) deck.pop();
+            newOrder.reverse().forEach(c => deck.push(c));
+            
+            logs.push(`🔮 ${gameState.players[meIdx].name} đã thao túng Tương Lai!`);
+
+            closeModal();
+            await roomRef.update({ deck, logs });
+        }
+
+        function askCurseTarget(players, meIdx) {
+            const modal = document.getElementById('modal-container');
+            const content = document.getElementById('modal-content');
+            modal.classList.remove('hidden');
+
+            const others = players.filter((p, idx) => idx !== meIdx && !p.isDead);
+
+            content.innerHTML = `
+                <h3 class="lucky-font text-2xl mb-4 text-stone-500">LỜI NGUYỀN MÙ</h3>
+                <p class="text-sm text-zinc-400 mb-4">Chọn người chịu bóng tối:</p>
+                <div class="space-y-2 mb-6 max-h-60 overflow-y-auto">
+                    ${others.map(p => `
+                        <button onclick="executeCurse('${p.uid}')" class="w-full bg-zinc-800 hover:bg-zinc-700 p-3 rounded-xl text-left border border-zinc-700 font-bold">
+                            ${p.name}
+                        </button>
+                    `).join('')}
+                </div>
+            `;
+        }
+
+        async function executeCurse(targetUid) {
+            const players = [...gameState.players];
+            const meIdx = players.findIndex(p => p.uid === userId);
+            const me = players[meIdx];
+            const target = players.find(p => p.uid === targetUid);
+            const logs = [...gameState.logs];
+
+            target.isBlind = true;
+            target.hand = target.hand.sort(() => Math.random() - 0.5);
+
+            logs.push(`💨 ${me.name} ếm LỜI NGUYỀN MÙ lên ${target.name}! Bài của họ đã bị úp và xáo trộn!`);
+
+            closeModal();
+            await roomRef.update({ players, logs });
+        }
+
+        function askTargetedAttackTarget(players, meIdx) {
+            const modal = document.getElementById('modal-container');
+            const content = document.getElementById('modal-content');
+            modal.classList.remove('hidden');
+
+            const others = players.filter((p, idx) => idx !== meIdx && !p.isDead);
+
+            content.innerHTML = `
+                <h3 class="lucky-font text-2xl mb-4 text-orange-600">CHỌN NGƯỜI ĐỂ ĐÂM LÉN</h3>
+                <p class="text-sm text-zinc-400 mb-4">Bắt 1 người chơi phải rút 2 lần:</p>
+                <div class="space-y-2 mb-6 max-h-60 overflow-y-auto">
+                    ${others.map(p => `
+                        <button onclick="executeTargetedAttack('${p.uid}')" class="w-full bg-zinc-800 hover:bg-zinc-700 p-3 rounded-xl text-left border border-zinc-700 font-bold">
+                            ${p.name}
+                        </button>
+                    `).join('')}
+                </div>
+            `;
+        }
+
+        async function executeTargetedAttack(targetUid) {
+            const players = [...gameState.players];
+            const meIdx = players.findIndex(p => p.uid === userId);
+            const me = players[meIdx];
+            const targetIdx = players.findIndex(p => p.uid === targetUid);
+            const target = players[targetIdx];
+            const logs = [...gameState.logs];
+
+            me.turnsToTake = 1;
+            gameState.currentTurn = targetIdx;
+            target.turnsToTake += 2;
+            logs.push(`🎯 ${me.name} ĐÂM LÉN ${target.name}! Con mồi chịu thêm 2 lượt bốc củi!`);
+
+            closeModal();
+            await roomRef.update({ players, logs, currentTurn: gameState.currentTurn });
         }
 
         function askFavor(players, meIdx) {
@@ -775,21 +1245,128 @@
         `;
         }
 
+        function auditHands(players, deck, logs) {
+            let someoneDied = false;
+            players.forEach((p) => {
+                if (p.isDead) return;
+                const kittensCount = p.hand.filter(c => c === 'KITTEN').length;
+                const streakingCount = p.hand.filter(c => c === 'STREAKING_KITTEN').length;
+                
+                let kittensToDefuse = kittensCount - streakingCount;
+                while (kittensToDefuse > 0) {
+                    const defuseIdx = p.hand.indexOf('DEFUSE');
+                    if (defuseIdx > -1) {
+                        p.hand.splice(defuseIdx, 1);
+                        p.hand.splice(p.hand.indexOf('KITTEN'), 1);
+                        logs.push(`🧨 ${p.name} mất bài cứu mạng nên bom xì khói! May mắn có DEFUSE!`);
+                        const insertPos = Math.floor(Math.random() * deck.length);
+                        deck.splice(insertPos, 0, 'KITTEN');
+                    } else {
+                        p.isDead = true;
+                        someoneDied = true;
+                        p.hand.splice(p.hand.indexOf('KITTEN'), 1);
+                        logs.push(`💀 ${p.name} rớt Mèo Chạy Rông mà ôm bom không lối thoát! BÙM!`);
+                    }
+                    kittensToDefuse--;
+                }
+            });
+            return someoneDied;
+        }
+
+        async function processPostHandChange(players, deck, logs, discardPile) {
+            const someoneDied = auditHands(players, deck, logs);
+            if (someoneDied) {
+                const survivors = players.filter(p => !p.isDead);
+                if (survivors.length === 1) {
+                    logs.push(`🏆 ${survivors[0].name} LÀ NGƯỜI CHIẾN THẮNG!`);
+                    await roomRef.update({ status: 'finished', logs, players, deck, discardPile });
+                    return true;
+                }
+                if (players[gameState.currentTurn].isDead) {
+                    gameState.currentTurn = getNextLivingPlayerIndex(players, gameState.currentTurn);
+                }
+            }
+            return false;
+        }
+
         async function executeFavor(targetUid) {
             if (!gameState) return;
             const players = [...gameState.players];
             const me = players.find(p => p.uid === userId);
             const target = players.find(p => p.uid === targetUid);
+            const logs = [...gameState.logs];
 
             if (target && target.hand.length > 0) {
                 const randIdx = Math.floor(Math.random() * target.hand.length);
                 const card = target.hand.splice(randIdx, 1)[0];
                 me.hand.push(card);
-                gameState.logs.push(`🎁 ${me.name} đã lấy 1 lá bài từ ${target.name}`);
+                logs.push(`🎁 ${me.name} đã lấy 1 lá bài từ ${target.name}`);
+                
+                gameState.theftEvent = {
+                    victimUid: target.uid,
+                    thiefName: me.name,
+                    cardType: card,
+                    timestamp: Date.now()
+                };
             }
 
             closeModal();
-            await roomRef.update({ players: gameState.players, logs: gameState.logs });
+            const isGameOver = await processPostHandChange(players, gameState.deck, logs, gameState.discardPile);
+            if (isGameOver) return;
+            
+            await roomRef.update({ 
+                players, 
+                logs, 
+                deck: gameState.deck, 
+                discardPile: gameState.discardPile, 
+                currentTurn: gameState.currentTurn,
+                theftEvent: gameState.theftEvent || null
+            });
+        }
+
+        function showDefusingPopup() {
+            const modal = document.getElementById('modal-container');
+            const content = document.getElementById('modal-content');
+            modal.classList.remove('hidden');
+
+            const isMe = (gameState.players[gameState.defusingPlayer].uid === userId);
+            const defusingPlayerName = gameState.players[gameState.defusingPlayer].name;
+
+            if (isMe) {
+                const me = gameState.players[gameState.defusingPlayer];
+                const defuseIdx = me.hand.indexOf('DEFUSE');
+                let actionBtnHTML = '';
+                if (defuseIdx > -1) {
+                    actionBtnHTML = `<button onclick="playDefuseCard(${defuseIdx})" class="w-full bg-green-600 hover:bg-green-500 py-4 rounded-xl lucky-font text-xl mt-4 animate-bounce shadow-[0_0_15px_rgba(34,197,94,0.6)]">DỪNG LẠI! DÙNG GỠ BOM NGAY!</button>`;
+                } else {
+                    actionBtnHTML = `<p class="lucky-font text-xl text-center text-red-600 mt-4">TRONG TAY KHÔNG CÓ GỠ BOM! CHỜ CHẾT NHÉ!</p>`;
+                }
+
+                content.innerHTML = `
+                    <h3 class="lucky-font text-3xl mb-4 text-center text-red-500 animate-pulse">CẢNH BÁO MÈO NỔ!</h3>
+                    <p class="text-center text-zinc-300 mb-4">Bạn vừa bốc trúng Mèo Nổ. Nhanh tay quyết định số phận trước khi quá muộn!</p>
+                    <div class="flex justify-between text-xs text-zinc-400 mb-1">
+                        <span>Sức chịu đựng:</span>
+                        <span id="defuse-time-text" class="font-mono text-red-400 font-bold text-lg">10.0s</span>
+                    </div>
+                    <div class="w-full bg-zinc-800 h-6 rounded-full overflow-hidden border border-zinc-600 mb-2 relative">
+                        <div id="defuse-bar-inner" class="h-full bg-red-600 w-full transition-all duration-75"></div>
+                    </div>
+                    ${actionBtnHTML}
+                `;
+            } else {
+                content.innerHTML = `
+                    <h3 class="lucky-font text-2xl mb-4 text-center text-orange-500 animate-pulse">BOM ĐANG KÍCH HOẠT...</h3>
+                    <p class="text-center text-zinc-300 mb-4"><b>${defusingPlayerName}</b> đang câu giờ trước lưỡi hái tử thần!</p>
+                    <div class="flex justify-between text-xs text-zinc-400 mb-1">
+                        <span>Còn lại:</span>
+                        <span id="defuse-time-text" class="font-mono text-orange-400 font-bold text-lg">10.0s</span>
+                    </div>
+                    <div class="w-full bg-zinc-800 h-6 rounded-full overflow-hidden border border-zinc-600 mb-6 relative">
+                        <div id="defuse-bar-inner" class="h-full bg-red-600 w-full transition-all duration-75"></div>
+                    </div>
+                `;
+            }
         }
 
         function showDrawnCardPopup(cardType, isExploding, defused) {
@@ -878,6 +1455,13 @@
                 stolenCardType = target.hand.splice(cardIndexToSteal, 1)[0];
                 me.hand.push(stolenCardType);
                 logs.push(`🥷 ${me.name} dùng Combo 2 lá cướp được 1 lá từ ${target.name}!`);
+                
+                gameState.theftEvent = {
+                    victimUid: target.uid,
+                    thiefName: me.name,
+                    cardType: stolenCardType,
+                    timestamp: Date.now()
+                };
             } else {
                 logs.push(`🤷‍♂️ ${target.name} không có bài để cướp (Lỗi đồng bộ).`);
             }
@@ -888,7 +1472,17 @@
                 closeModal();
             }
 
-            await roomRef.update({ players, logs, discardPile, currentTurn: gameState.currentTurn });
+            const isGameOver = await processPostHandChange(players, gameState.deck, logs, discardPile);
+            if (isGameOver) return;
+
+            await roomRef.update({ 
+                players, 
+                logs, 
+                deck: gameState.deck, 
+                discardPile, 
+                currentTurn: gameState.currentTurn,
+                theftEvent: gameState.theftEvent || null
+            });
         }
 
         function showStolenCardPopup(cardType, targetName) {
@@ -972,12 +1566,29 @@
                 target.hand.splice(cardIdx, 1);
                 me.hand.push(requestedCardType);
                 logs.push(`✅ ${target.name} đã ngậm ngùi đưa lá ${CARD_TYPES[requestedCardType].name} cho ${me.name}.`);
+                
+                gameState.theftEvent = {
+                    victimUid: target.uid,
+                    thiefName: me.name,
+                    cardType: requestedCardType,
+                    timestamp: Date.now()
+                };
             } else {
                  logs.push(`❌ ${target.name} KHÔNG CÓ lá đó. ${me.name} mất bài vô ích!`);
             }
 
             closeModal();
-            await roomRef.update({ players, logs, discardPile, currentTurn: gameState.currentTurn });
+            const isGameOver = await processPostHandChange(players, gameState.deck, logs, discardPile);
+            if (isGameOver) return;
+
+            await roomRef.update({ 
+                players, 
+                logs, 
+                deck: gameState.deck, 
+                discardPile, 
+                currentTurn: gameState.currentTurn,
+                theftEvent: gameState.theftEvent || null
+            });
         }
 
         function askCombo5Target(indexesToDiscard) {

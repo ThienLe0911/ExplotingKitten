@@ -697,8 +697,10 @@
 
             const playBtn = document.getElementById('play-selected-btn');
             const firstCard = me.hand[selectedCardIndexes[0]];
-            const hasOnlyNopeSelected = selectedCardIndexes.length === 1 && (firstCard?.type || firstCard) === 'NOPE';
-            if ((isMyTurn && selectedCardIndexes.length > 0) || hasOnlyNopeSelected) {
+            const firstCardType = firstCard?.type || firstCard;
+            const isReactionSelected = selectedCardIndexes.length === 1 && (firstCardType === 'NOPE' || (firstCardType === 'CLONE' && !!gameState.pendingAction));
+            
+            if ((isMyTurn && selectedCardIndexes.length > 0) || isReactionSelected) {
                 playBtn.classList.remove('hidden');
                 playBtn.classList.add('animate-pulse');
             } else {
@@ -1173,6 +1175,8 @@
             }
             const selectedTypes = selectedCards.map(c => c.type || c);
             const isNopeOnly = selectedTypes.length === 1 && selectedTypes[0] === 'NOPE';
+            const isCloneResponse = selectedTypes.length === 1 && selectedTypes[0] === 'CLONE' && !!gameState.pendingAction;
+            const isReaction = isNopeOnly || isCloneResponse;
 
             if (gameState.status === 'defusing') {
                 const defuseCardIdx = selectedTypes.indexOf('DEFUSE');
@@ -1184,12 +1188,12 @@
                 }
                 return;
             }
-            if (gameState.currentTurn !== meIdx && !isNopeOnly) {
+            if (gameState.currentTurn !== meIdx && !isReaction) {
                 showToast("Không phải lượt của bạn!");
                 return;
             }
 
-            if (isNopeOnly) {
+            if (isReaction) {
                 await playNope(indexes[0]);
                 selectedCardIndexes = [];
                 return;
@@ -1252,8 +1256,9 @@
             const meIdx = players.findIndex(p => p.uid === userId);
             const me = players[meIdx];
             
-            const nopeCard = me.hand.splice(cardIdx, 1)[0];
-            const logEntry = `[NOPE] ${me.name} ném lá NOPE!`;
+            const card = me.hand.splice(cardIdx, 1)[0];
+            const cardType = card.type || card;
+            const logEntry = (cardType === 'CLONE') ? `[CLONE] ${me.name} đã dùng Nhân Bản để NOPE!` : `[NOPE] ${me.name} ném lá NOPE!`;
 
             const pendingAction = { ...gameState.pendingAction };
             pendingAction.nopeCount = (pendingAction.nopeCount || 0) + 1;
@@ -1261,7 +1266,7 @@
 
             await roomRef.update({ 
                 players, 
-                discardPile: firebase.firestore.FieldValue.arrayUnion(nopeCard), 
+                discardPile: firebase.firestore.FieldValue.arrayUnion(card), 
                 logs: firebase.firestore.FieldValue.arrayUnion(logEntry), 
                 pendingAction 
             });

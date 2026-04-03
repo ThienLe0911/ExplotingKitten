@@ -199,9 +199,9 @@
                 <div id="deck-preview-list" class="flex flex-wrap gap-2"></div>
             </div>
 
-            <div class="flex-grow grid grid-cols-1 gap-4 items-start">
-                <!-- Hàng trên: Bốc bài + Đã đánh (cùng 1 hàng trên mọi màn hình) -->
-                <div class="flex flex-row justify-center items-end gap-6">
+            <div class="flex-grow flex flex-col md:flex-row gap-4 items-start">
+                <!-- Bốc bài + Đã đánh -->
+                <div class="flex flex-row justify-center items-end gap-6 shrink-0">
                     <div class="flex flex-col items-center space-y-2">
                         <div id="draw-pile" onclick="drawCard()"
                             class="w-32 h-44 bg-red-900 border-4 border-white rounded-xl flex items-center justify-center cursor-pointer hover:bg-red-800 transition-colors shadow-2xl relative group">
@@ -222,8 +222,8 @@
                     </div>
                 </div>
 
-                <!-- Hàng dưới: Game logs -->
-                <div class="bg-black/40 rounded-xl p-4 max-h-40 overflow-y-auto border border-zinc-800 text-sm"
+                <!-- Game logs (desktop: cùng hàng với piles, mobile: ẩn ở đây) -->
+                <div class="hidden md:block md:flex-1 bg-black/40 rounded-xl p-4 overflow-y-auto border border-zinc-800 text-sm max-h-64"
                     id="game-logs">
                     <div class="text-zinc-500 italic">Hệ thống đang sẵn sàng...</div>
                 </div>
@@ -242,6 +242,10 @@
                     </div>
                 </div>
                 <div id="my-hand" class="flex flex-wrap justify-center gap-2 overflow-x-auto py-6 min-h-[180px]"></div>
+                <!-- Game logs (mobile only: dưới BÀI CỦA BẠN) -->
+                <div class="mt-2 md:hidden bg-black/40 rounded-xl p-4 max-h-48 overflow-y-auto border border-zinc-800 text-sm" id="game-logs-mobile">
+                    <div class="text-zinc-500 italic">Hệ thống đang sẵn sàng...</div>
+                </div>
             </div>
         </div>
     </div>
@@ -607,7 +611,7 @@
                 pDiv.innerHTML = `
                 <p class="text-xs font-bold truncate">${p.name}</p>
                 <div class="flex justify-between items-center mt-1">
-                    <span class="text-[10px] text-zinc-400">${p.hand.length} lá</span>
+                    <span class="text-[10px] text-zinc-400">${p.hand.length} lá${!p.isDead && p.turnsToTake > 1 ? ` · <span class="text-orange-400">${p.turnsToTake} lượt</span>` : ''}</span>
                     ${p.isDead ? '💀' : (isTurn ? '🔥' : '⏳')}
                 </div>
             `;
@@ -748,7 +752,28 @@
                 playBtn.classList.remove('animate-pulse');
             }
 
-            document.getElementById('deck-count').innerText = gameState.deck.length;
+            // Cập nhật nọc bài – hiển thị IMPLODING_KITTEN_ACTIVE khi ở trên cùng
+            const drawPileEl = document.getElementById('draw-pile');
+            const topDeckCard = gameState.deck[gameState.deck.length - 1];
+            const topDeckType = topDeckCard?.type || topDeckCard;
+            if (topDeckType === 'IMPLODING_KITTEN_ACTIVE') {
+                drawPileEl.className = 'w-32 h-44 bg-black border-4 border-red-500 rounded-xl flex items-center justify-center cursor-pointer hover:bg-zinc-900 transition-colors shadow-2xl shadow-red-900/50 relative group animate-pulse';
+                drawPileEl.innerHTML = `
+                    <div class="absolute inset-2 border-2 border-dashed border-red-500 rounded-lg"></div>
+                    <div class="text-center px-2">
+                        <div class="text-2xl mb-1">💣</div>
+                        <p class="text-red-400 font-bold text-[9px] lucky-font uppercase leading-tight">MÈO SẬP<br>NGỬA!</p>
+                    </div>
+                    <div class="absolute -bottom-2 -right-2 bg-white text-black px-2 py-1 rounded text-xs font-bold">${gameState.deck.length}</div>
+                `;
+            } else {
+                drawPileEl.className = 'w-32 h-44 bg-red-900 border-4 border-white rounded-xl flex items-center justify-center cursor-pointer hover:bg-red-800 transition-colors shadow-2xl relative group';
+                drawPileEl.innerHTML = `
+                    <div class="absolute inset-2 border-2 border-dashed border-red-400 rounded-lg"></div>
+                    <span class="lucky-font text-4xl group-hover:scale-110 transition-transform text-white">?</span>
+                    <div class="absolute -bottom-2 -right-2 bg-white text-black px-2 py-1 rounded text-xs font-bold">${gameState.deck.length}</div>
+                `;
+            }
             const lastDiscard = gameState.discardPile[gameState.discardPile.length - 1];
             const discardPileEl = document.getElementById('discard-pile');
             if (lastDiscard) {
@@ -802,8 +827,10 @@
                 }
             }
 
-            const logsEl = document.getElementById('game-logs');
-            logsEl.innerHTML = gameState.logs.slice(-20).reverse().map(l => `<div class="mb-1 border-l-2 border-red-500 pl-2 text-zinc-300">${l}</div>`).join('');
+            const logsHTML = gameState.logs.slice(-20).reverse().map(l => `<div class="mb-1 border-l-2 border-red-500 pl-2 text-zinc-300">${l}</div>`).join('');
+            document.getElementById('game-logs').innerHTML = logsHTML;
+            const mobileLogsEl = document.getElementById('game-logs-mobile');
+            if (mobileLogsEl) mobileLogsEl.innerHTML = logsHTML;
 
             const deckPreview = document.getElementById('deck-preview');
             if (gameState.status === 'waiting' && gameState.players.length > 0) {

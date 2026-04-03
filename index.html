@@ -34,6 +34,18 @@
             z-index: 50;
         }
 
+        .card-animation[draggable="true"] {
+            cursor: grab;
+        }
+
+        .card-animation[draggable="true"]:active {
+            cursor: grabbing;
+        }
+
+        .card-animation.dragging {
+            opacity: 0.4;
+        }
+
         .bg-pattern {
             background-image: radial-gradient(#333 1px, transparent 1px);
             background-size: 20px 20px;
@@ -187,27 +199,31 @@
                 <div id="deck-preview-list" class="flex flex-wrap gap-2"></div>
             </div>
 
-            <div class="flex-grow grid grid-cols-1 md:grid-cols-3 gap-6 items-center">
-                <div class="flex flex-col items-center space-y-2">
-                    <div id="draw-pile" onclick="drawCard()"
-                        class="w-32 h-44 bg-red-900 border-4 border-white rounded-xl flex items-center justify-center cursor-pointer hover:bg-red-800 transition-colors shadow-2xl relative group">
-                        <div class="absolute inset-2 border-2 border-dashed border-red-400 rounded-lg"></div>
-                        <span class="lucky-font text-4xl group-hover:scale-110 transition-transform text-white">?</span>
-                        <div class="absolute -bottom-2 -right-2 bg-white text-black px-2 py-1 rounded text-xs font-bold"
-                            id="deck-count">0</div>
+            <div class="flex-grow grid grid-cols-1 gap-4 items-start">
+                <!-- Hàng trên: Bốc bài + Đã đánh (cùng 1 hàng trên mọi màn hình) -->
+                <div class="flex flex-row justify-center items-end gap-6">
+                    <div class="flex flex-col items-center space-y-2">
+                        <div id="draw-pile" onclick="drawCard()"
+                            class="w-32 h-44 bg-red-900 border-4 border-white rounded-xl flex items-center justify-center cursor-pointer hover:bg-red-800 transition-colors shadow-2xl relative group">
+                            <div class="absolute inset-2 border-2 border-dashed border-red-400 rounded-lg"></div>
+                            <span class="lucky-font text-4xl group-hover:scale-110 transition-transform text-white">?</span>
+                            <div class="absolute -bottom-2 -right-2 bg-white text-black px-2 py-1 rounded text-xs font-bold"
+                                id="deck-count">0</div>
+                        </div>
+                        <p class="text-sm font-bold uppercase tracking-widest text-zinc-400">Rút bài</p>
                     </div>
-                    <p class="text-sm font-bold uppercase tracking-widest text-zinc-400">Rút bài</p>
+
+                    <div class="flex flex-col items-center space-y-2">
+                        <div id="discard-pile"
+                            class="w-32 h-44 bg-zinc-800 border-2 border-zinc-600 rounded-xl flex flex-col items-center justify-center shadow-xl p-2 text-center overflow-hidden">
+                            <span id="discard-name" class="text-xs font-bold uppercase">Trống</span>
+                        </div>
+                        <p class="text-sm font-bold uppercase tracking-widest text-zinc-400">Bài đã đánh</p>
+                    </div>
                 </div>
 
-                <div class="flex flex-col items-center space-y-2">
-                    <div id="discard-pile"
-                        class="w-32 h-44 bg-zinc-800 border-2 border-zinc-600 rounded-xl flex flex-col items-center justify-center shadow-xl p-2 text-center overflow-hidden">
-                        <span id="discard-name" class="text-xs font-bold uppercase">Trống</span>
-                    </div>
-                    <p class="text-sm font-bold uppercase tracking-widest text-zinc-400">Bài đã đánh</p>
-                </div>
-
-                <div class="bg-black/40 rounded-xl p-4 h-44 overflow-y-auto border border-zinc-800 text-sm"
+                <!-- Hàng dưới: Game logs -->
+                <div class="bg-black/40 rounded-xl p-4 max-h-40 overflow-y-auto border border-zinc-800 text-sm"
                     id="game-logs">
                     <div class="text-zinc-500 italic">Hệ thống đang sẵn sàng...</div>
                 </div>
@@ -472,8 +488,22 @@
                 const newData = doc.data();
                 if (gameState && newData.theftEvent &&
                     (!gameState.theftEvent || gameState.theftEvent.timestamp !== newData.theftEvent.timestamp)) {
-                    if (newData.theftEvent.victimUid === userId) {
+                    if (newData.theftEvent.victimUid === userId && !newData.theftEvent.notFound) {
+                        // Nạn nhân thấy bị lấy lá gì
                         showVictimAlert(newData.theftEvent);
+                    } else if (newData.theftEvent.thiefUid === userId) {
+                        if (newData.theftEvent.isFavor) {
+                            // Người dùng FAVOR thấy nhận được lá gì
+                            const giverName = newData.players.find(p => p.uid === newData.theftEvent.victimUid)?.name || '???';
+                            showStolenCardPopup(newData.theftEvent.cardType, giverName);
+                        } else if (newData.theftEvent.notFound) {
+                            // COMBO_3: victim không có lá đó
+                            showToast(`❌ ${newData.theftEvent.victimName} không có lá ${CARD_TYPES[newData.theftEvent.requestedType]?.name || ''}!`);
+                        } else {
+                            // COMBO_2 / COMBO_3: thấy mình lấy được lá gì
+                            const victimName = newData.players.find(p => p.uid === newData.theftEvent.victimUid)?.name || '???';
+                            showStolenCardPopup(newData.theftEvent.cardType, victimName);
+                        }
                     }
                 }
                 gameState = newData;
@@ -586,7 +616,9 @@
 
             if (gameState.pendingAction) {
                 if (!window.pendingActionInterval) {
-                   window.showPendingActionPopup();
+                   // Chỉ show popup nếu action chưa hết hạn (tránh reset popup khi timer đã clear nhưng host chưa resolve)
+                   const actionNotExpired = !gameState.pendingAction.endTime || (gameState.pendingAction.endTime > Date.now() - 500);
+                   if (actionNotExpired) window.showPendingActionPopup();
                    window.pendingActionInterval = setInterval(() => {
                         window.updatePendingActionPopup();
                         if (gameState.pendingAction?.endTime) {
@@ -640,9 +672,10 @@
                     window.pendingActionInterval = null;
                 }
                 
-                // Ensure modal is closed if it was showing a NOPE popup
-                if (document.getElementById('nope-popup-active')) {
-                     closeModal();
+                // Đóng modal nếu đang hiển thị NOPE popup (có hoặc không có nope-popup-active)
+                const modalEl = document.getElementById('modal-container');
+                if (!modalEl.classList.contains('hidden') && document.getElementById('nope-popup-active')) {
+                    closeModal();
                 }
                 
                 // Cleanup blocking UI
@@ -676,6 +709,13 @@
                 // Actually, let's allow selecting any card during pending action, 
                 // executePlay will handle validation. This prevents "locking" UI.
                 const canSelect = isMyTurn || !!gameState.pendingAction;
+
+                // Drag-and-drop attributes (cho phép kéo thả tự do để sắp xếp bài)
+                cardBtn.draggable = !me.isDead;
+                cardBtn.addEventListener('dragstart', (e) => onCardDragStart(e, idx));
+                cardBtn.addEventListener('dragover', (e) => onCardDragOver(e, idx));
+                cardBtn.addEventListener('drop', (e) => onCardDrop(e, idx));
+                cardBtn.addEventListener('dragend', onCardDragEnd);
 
                 if (me.isBlind) {
                     cardBtn.className = `w-24 h-36 p-2 rounded-lg pixel-border flex flex-col justify-center items-center text-center bg-stone-900 border-2 ${isSelected ? 'border-yellow-400 -translate-y-6 ring-4 ring-yellow-400 shadow-[0_10px_20px_rgba(250,204,21,0.5)] z-40' : 'border-stone-700'} shrink-0 disabled:opacity-50 disabled:hover:translate-y-0 text-white`;
@@ -940,10 +980,14 @@
                     gameState.currentTurn = getNextLivingPlayerIndex(players, meIdx);
                 }
             } else if (cardType === 'KITTEN') {
-                if (me.hand.some(c => (c.type || c) === 'STREAKING_KITTEN')) {
+                // Streaking Kitten chỉ cho phép ôm TỐI ĐA 1 KITTEN trên tay không nổ.
+                // Nếu đang giữ < số Streaking Kitten trên tay thì được bảo vệ, ngược lại phải nổ.
+                const streakingCount = me.hand.filter(c => (c.type || c) === 'STREAKING_KITTEN').length;
+                const kittensAlreadyHeld = me.hand.filter(c => (c.type || c) === 'KITTEN').length;
+                if (streakingCount > 0 && kittensAlreadyHeld < streakingCount) {
                     me.hand.push(card);
                     me.turnsToTake--;
-                    logsArr.push(`[DRAW] ${me.name} rút trúng Mèo Nổ nhưng Mèo Chạy Rông đã bảo vệ!`);
+                    logsArr.push(`[DRAW] ${me.name} đã rút 1 lá bài.`);
                     if (me.turnsToTake <= 0) {
                         me.turnsToTake = 1;
                         gameState.currentTurn = getNextLivingPlayerIndex(players, meIdx);
@@ -1149,6 +1193,43 @@
             showToast("Đã sắp xếp bài!");
         }
 
+        let dragSourceIndex = null;
+
+        function onCardDragStart(e, idx) {
+            dragSourceIndex = idx;
+            e.dataTransfer.effectAllowed = 'move';
+        }
+
+        function onCardDragOver(e, idx) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+        }
+
+        async function onCardDrop(e, targetIdx) {
+            e.preventDefault();
+            if (dragSourceIndex === null || dragSourceIndex === targetIdx) {
+                dragSourceIndex = null;
+                return;
+            }
+            const players = JSON.parse(JSON.stringify(gameState.players));
+            const meIdx = players.findIndex(p => p.uid === userId);
+            if (meIdx === -1) { dragSourceIndex = null; return; }
+
+            const hand = players[meIdx].hand;
+            const [moved] = hand.splice(dragSourceIndex, 1);
+            hand.splice(targetIdx, 0, moved);
+
+            // Cập nhật selectedCardIndexes theo vị trí mới
+            selectedCardIndexes = [];
+            dragSourceIndex = null;
+
+            await roomRef.update({ players });
+        }
+
+        function onCardDragEnd() {
+            dragSourceIndex = null;
+        }
+
         function toggleCardSelection(idx) {
             const pos = selectedCardIndexes.indexOf(idx);
             if (pos > -1) {
@@ -1258,11 +1339,19 @@
             
             const card = me.hand.splice(cardIdx, 1)[0];
             const cardType = card.type || card;
-            const logEntry = (cardType === 'CLONE') ? `[CLONE] ${me.name} đã dùng Nhân Bản để NOPE!` : `[NOPE] ${me.name} ném lá NOPE!`;
-
+            
             const pendingAction = { ...gameState.pendingAction };
+            const actionPlayerName = gameState.players[pendingAction.playerIdx]?.name || '???';
+            const isNopingNope = (pendingAction.nopeCount % 2) !== 0; // đang bị nope, giờ yup lại
+            const logEntry = isNopingNope
+                ? `[YUP] ${me.name} ném YUP chặn ngược lại → Hành động của ${actionPlayerName} ĐƯỢC THỰC HIỆN TRỞ LẠI!`
+                : (cardType === 'CLONE'
+                    ? `[CLONE→NOPE] ${me.name} dùng Nhân Bản chặn hành động của ${actionPlayerName}!`
+                    : `[NOPE] ${me.name} ném NOPE chặn hành động của ${actionPlayerName}!`);
+
             pendingAction.nopeCount = (pendingAction.nopeCount || 0) + 1;
-            pendingAction.endTime = Date.now() + 5000;
+            // Reset timer về 8s sau mỗi NOPE/YUP để chờ phản ứng tiếp theo
+            pendingAction.endTime = Date.now() + 8000;
 
             await roomRef.update({ 
                 players, 
@@ -1315,7 +1404,8 @@
                     playerIdx: meIdx,
                     nopeCount: 0,
                     endTime: Date.now() + 8000,
-                    targetData: targetData
+                    targetData: targetData,
+                    confirmed: !!(targetData && (targetData.confirmed || (targetData.targetId && targetData.cardIndex !== undefined)))
                 }
             });
         }
@@ -1331,8 +1421,21 @@
                 if (!document.getElementById('modal-container').classList.contains('hidden') && 
                     !document.getElementById('nope-popup-active')) return;
                 
+                // Nếu pendingAction đã có đủ targetData (user đã chọn xong), không mở lại UI
+                const td = action.targetData;
+                const alreadyConfirmed = action.confirmed === true;
+                if (alreadyConfirmed) return;
+
                 switch (action.type) {
-                    case 'COMBO_2': askCombo2Target(); break;
+                    case 'COMBO_2':
+                        // Chưa chọn target hoặc chưa chọn lá thì mới hỏi
+                        if (!td || !td.targetId) {
+                            askCombo2Target();
+                        } else if (td.cardIndex === undefined) {
+                            askCombo2CardPick(td.targetId, []);
+                        }
+                        // Nếu đã có đủ targetId + cardIndex thì không làm gì (đang pending trước NOPE)
+                        break;
                     case 'COMBO_3': askCombo3Target(); break;
                     case 'COMBO_5': askCombo5Target(); break;
                     case 'FAVOR': askFavor(gameState.players, action.playerIdx); break;
@@ -1407,6 +1510,7 @@
             // Critical Fix: Use targetData from pendingAction if not provided directly (e.g. from 10s timer)
             const actualTargetData = targetData || action.targetData;
 
+            let drawFromBottomCard = null; // Dùng cho DRAW_FROM_BOTTOM popup (gọi sau closeModal)
             let roomUpdate = {
                 status: 'playing',
                 players,
@@ -1484,6 +1588,10 @@
                                 me.turnsToTake = 1;
                                 roomUpdate.currentTurn = getNextLivingPlayerIndex(players, action.playerIdx);
                             }
+                            // Chỉ thông báo riêng cho người rút, không lộ tên lá cho mọi người
+                            roomUpdate.logs.push(`[RÚT ĐÁY] ${me.name} đã rút 1 lá từ đáy nọc bài.`);
+                            // Lưu lại để hiện popup SAU closeModal() (tránh bị đóng ngay lập tức)
+                            if (isMeAction) drawFromBottomCard = bottomCard.type || bottomCard;
                         }
                         break;
                     case 'TARGETED_ATTACK':
@@ -1520,7 +1628,8 @@
                                 const stolen = victim.hand.splice(actualTargetData.cardIndex, 1)[0];
                                 me.hand.push(stolen);
                                 roomUpdate.logs.push(`👐 ${me.name} đã bốc trộm 1 lá của ${victim.name}!`);
-                                roomUpdate.theftEvent = { victimUid: victim.uid, thiefName: me.name, cardType: stolen.type, timestamp: Date.now() };
+                                // thiefUid để snapshot handler thông báo cho người cướp
+                                roomUpdate.theftEvent = { victimUid: victim.uid, thiefUid: me.uid, thiefName: me.name, cardType: stolen.type || stolen, timestamp: Date.now() };
                             }
                         }
                         break;
@@ -1534,13 +1643,22 @@
                                     me.hand.push(stolen);
                                     roomUpdate.logs.push(`🃏 ${me.name} đòi và cướp được lá ${CARD_TYPES[actualTargetData.requestedType].name} từ ${victim.name}!`);
                                     roomUpdate.theftEvent = { 
-                                        victimUid: victim.uid, 
+                                        victimUid: victim.uid,
+                                        thiefUid: me.uid,
                                         thiefName: me.name, 
                                         cardType: actualTargetData.requestedType, 
                                         timestamp: Date.now() 
                                     };
                                 } else {
                                     roomUpdate.logs.push(`💨 ${me.name} đòi lá ${CARD_TYPES[actualTargetData.requestedType].name} nhưng ${victim.name} không có!`);
+                                    // Thông báo riêng cho người đánh combo biết kết quả "không có"
+                                    roomUpdate.theftEvent = {
+                                        thiefUid: me.uid,
+                                        notFound: true,
+                                        requestedType: actualTargetData.requestedType,
+                                        victimName: victim.name,
+                                        timestamp: Date.now()
+                                    };
                                 }
                             }
                         }
@@ -1560,6 +1678,8 @@
             }
 
             closeModal();
+            // Hiện popup lá rút đáy SAU khi đóng NOPE popup (tránh bị closeModal() hủy)
+            if (drawFromBottomCard) showDrawnCardPopup(drawFromBottomCard, false, false);
             await processPostHandChange(roomUpdate.players, roomUpdate.deck, roomUpdate.logs, roomUpdate.discardPile);
             await roomRef.update(roomUpdate);
         };
@@ -1582,7 +1702,16 @@
             await roomRef.update({
                 players,
                 logs,
-                favorRequest: firebase.firestore.FieldValue.delete()
+                favorRequest: firebase.firestore.FieldValue.delete(),
+                // Thông báo cho người nhận (thief) biết đã nhận lá gì
+                theftEvent: {
+                    victimUid: players[victimIdx].uid,
+                    thiefUid: players[thiefIdx].uid,
+                    thiefName: players[thiefIdx].name,
+                    cardType: card.type || card,
+                    timestamp: Date.now(),
+                    isFavor: true
+                }
             });
         };
 
@@ -1769,7 +1898,20 @@
 
         async function commitAction(targetUid, type, indexes) {
             closeModal();
-            await initiateAction(indexes, type, { targetId: targetUid });
+            // Nếu pendingAction đã tồn tại cho người này (VD: CLONE → FAVOR/TARGETED_ATTACK/CURSE),
+            // chỉ cập nhật targetData – KHÔNG gọi initiateAction lại (tránh crash khi indexes = undefined)
+            const meIdx = gameState?.players?.findIndex(p => p.uid === userId) ?? -1;
+            if (gameState?.pendingAction && gameState.pendingAction.playerIdx === meIdx) {
+                await roomRef.update({
+                    pendingAction: {
+                        ...gameState.pendingAction,
+                        targetData: { targetId: targetUid },
+                        confirmed: true
+                    }
+                });
+            } else {
+                await initiateAction(indexes, type, { targetId: targetUid });
+            }
         }
 
         function auditHands(players, deck, logs) {
@@ -1998,7 +2140,7 @@
 
         async function commitCombo2(targetUid, cardIndexToSteal, indexes) {
             closeModal();
-            await initiateAction(indexes, 'COMBO_2', { targetId: targetUid, cardIndex: cardIndexToSteal });
+            await initiateAction(indexes, 'COMBO_2', { targetId: targetUid, cardIndex: cardIndexToSteal, confirmed: true });
         }
 
         async function executeCombo2(targetUid, cardIndexToSteal) {
@@ -2050,7 +2192,10 @@
             const content = document.getElementById('modal-content');
             modal.classList.remove('hidden');
 
-            const cInfo = CARD_TYPES[cardType];
+            // Normalize: chấp nhận cả string lẫn card object {type, name}
+            const type = (cardType && typeof cardType === 'object') ? (cardType.type || '') : cardType;
+            const cInfo = CARD_TYPES[type];
+            if (!cInfo) { closeModal(); return; } // guard tránh crash
 
             content.innerHTML = `
                 <h3 class="lucky-font text-2xl mb-4 text-center text-orange-400">TÚM ĐƯỢC RỒI!</h3>
@@ -2111,7 +2256,7 @@
 
         async function commitCombo3(targetUid, requestedCardType, indexes) {
             closeModal();
-            await initiateAction(indexes, 'COMBO_3', { targetId: targetUid, requestedType: requestedCardType });
+            await initiateAction(indexes, 'COMBO_3', { targetId: targetUid, requestedType: requestedCardType, confirmed: true });
         }
 
         async function executeCombo3(targetUid, requestedCardType) {
@@ -2188,7 +2333,7 @@
 
         async function commitCombo5(requestedCardType, indexes) {
             closeModal();
-            await initiateAction(indexes, 'COMBO_5', { requestedType: requestedCardType });
+            await initiateAction(indexes, 'COMBO_5', { requestedType: requestedCardType, confirmed: true });
         }
 
         function closeModal() {

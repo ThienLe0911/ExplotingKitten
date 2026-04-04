@@ -199,7 +199,7 @@
                 <div id="deck-preview-list" class="flex flex-wrap gap-2"></div>
             </div>
 
-            <div class="flex-grow flex flex-col md:flex-row gap-4 items-start">
+            <div class="flex flex-col md:flex-row gap-4 items-start">
                 <!-- Bốc bài + Đã đánh -->
                 <div class="flex flex-row justify-center items-end gap-6 shrink-0">
                     <div class="flex flex-col items-center space-y-2">
@@ -229,7 +229,7 @@
                 </div>
             </div>
 
-            <div class="mt-8 pb-4">
+            <div class="mt-3 pb-2">
                 <div class="flex flex-col sm:flex-row justify-between items-center sm:items-end mb-3 gap-3">
                     <h3 class="lucky-font text-xl text-zinc-400">BÀI CỦA BẠN (<span id="hand-count">0</span>)</h3>
                     <div class="flex gap-2 items-center">
@@ -241,7 +241,7 @@
                             BÀI</button>
                     </div>
                 </div>
-                <div id="my-hand" class="flex flex-wrap justify-center gap-2 overflow-x-auto py-6 min-h-[180px]"></div>
+                <div id="my-hand" class="flex flex-wrap justify-center gap-2 overflow-y-auto pt-8 pb-2 min-h-[160px] max-h-[250px]"></div>
                 <!-- Game logs (mobile only: dưới BÀI CỦA BẠN) -->
                 <div class="mt-2 md:hidden bg-black/40 rounded-xl p-4 max-h-48 overflow-y-auto border border-zinc-800 text-sm" id="game-logs-mobile">
                     <div class="text-zinc-500 italic">Hệ thống đang sẵn sàng...</div>
@@ -542,6 +542,31 @@
             const me = gameState.players.find(p => p.uid === userId);
             if (!me) return;
 
+            // Shuffle animation overlay (blocks all interactions while shuffling)
+            if (gameState.shuffling?.animating) {
+                if (!document.getElementById('shuffle-overlay')) {
+                    const overlay = document.createElement('div');
+                    overlay.id = 'shuffle-overlay';
+                    overlay.className = 'fixed inset-0 bg-black/90 flex flex-col items-center justify-center z-[200]';
+                    overlay.style.pointerEvents = 'all';
+                    overlay.innerHTML = `
+                        <div class="text-center">
+                            <div class="flex justify-center gap-3 mb-6">
+                                <div class="text-6xl animate-spin" style="animation-duration:0.4s">🃏</div>
+                                <div class="text-6xl animate-spin" style="animation-duration:0.4s;animation-delay:0.13s">🃏</div>
+                                <div class="text-6xl animate-spin" style="animation-duration:0.4s;animation-delay:0.26s">🃏</div>
+                            </div>
+                            <h2 class="lucky-font text-4xl text-yellow-400 animate-pulse">XÁO BÀI!</h2>
+                            <p class="text-zinc-400 mt-3 text-sm">Đang trộn lại nọc bài, chờ xíu...</p>
+                        </div>
+                    `;
+                    document.body.appendChild(overlay);
+                }
+            } else {
+                const overlay = document.getElementById('shuffle-overlay');
+                if (overlay) overlay.remove();
+            }
+
             const isMyTurn = gameState.players[gameState.currentTurn]?.uid === userId && gameState.status === 'playing';
 
             const startBtn = document.getElementById('start-btn');
@@ -695,13 +720,6 @@
             const handEl = document.getElementById('my-hand');
             handEl.innerHTML = '';
             document.getElementById('hand-count').innerText = me.hand.length;
-
-            // Add Sort Button
-            const sortBtn = document.createElement('button');
-            sortBtn.className = "bg-zinc-800 hover:bg-zinc-700 p-2 rounded-lg text-[10px] mb-2 w-full lucky-font border border-zinc-600";
-            sortBtn.innerText = "SẮP XẾP BÀI";
-            sortBtn.onclick = sortHand;
-            handEl.appendChild(sortBtn);
 
             me.hand.forEach((card, idx) => {
                 const cardType = card.type || card;
@@ -1568,6 +1586,7 @@
                         break;
                     case 'SHUFFLE':
                         roomUpdate.deck = roomUpdate.deck.sort(() => Math.random() - 0.5);
+                        roomUpdate.shuffling = { animating: true, startedAt: Date.now() };
                         break;
                     case 'SEE_THE_FUTURE':
                         roomUpdate.actionResult = { 
@@ -1708,7 +1727,13 @@
             // Hiện popup lá rút đáy SAU khi đóng NOPE popup (tránh bị closeModal() hủy)
             if (drawFromBottomCard) showDrawnCardPopup(drawFromBottomCard, false, false);
             await processPostHandChange(roomUpdate.players, roomUpdate.deck, roomUpdate.logs, roomUpdate.discardPile);
+            // Giới hạn logs tối đa 50 entries để tránh document quá lớn (Firestore 400 error)
+            roomUpdate.logs = roomUpdate.logs.slice(-50);
             await roomRef.update(roomUpdate);
+            // Xóa flag xào bài sau 2.2s (đủ để animation chạy xong)
+            if (!isNoped && action.type === 'SHUFFLE') {
+                setTimeout(() => roomRef.update({ shuffling: null }), 2200);
+            }
         };
 
         window.completeFavor = async (cardIdx) => {
@@ -1728,7 +1753,7 @@
             closeModal();
             await roomRef.update({
                 players,
-                logs,
+                logs: logs.slice(-50),
                 favorRequest: firebase.firestore.FieldValue.delete(),
                 // Thông báo cho người nhận (thief) biết đã nhận lá gì
                 theftEvent: {
@@ -1855,7 +1880,7 @@
             closeModal();
             await roomRef.update({ 
                 deck, 
-                logs,
+                logs: logs.slice(-50),
                 actionResult: firebase.firestore.FieldValue.delete()
             });
         }
@@ -1994,7 +2019,7 @@
                 const survivors = players.filter(p => !p.isDead);
                 if (survivors.length === 1) {
                     logs.push(`🏆 ${survivors[0].name} LÀ NGƯỜI CHIẾN THẮNG CUỐI CÙNG!`);
-                    await roomRef.update({ status: 'finished', logs, players, deck, discardPile });
+                    await roomRef.update({ status: 'finished', logs: logs.slice(-50), players, deck, discardPile });
                     return true;
                 }
                 // Nếu người chết là người đang tới lượt, chuyển lượt
@@ -2032,7 +2057,7 @@
 
             await roomRef.update({
                 players,
-                logs,
+                logs: logs.slice(-50),
                 deck: gameState.deck,
                 discardPile: gameState.discardPile,
                 currentTurn: gameState.currentTurn,
@@ -2206,7 +2231,7 @@
 
             await roomRef.update({
                 players,
-                logs,
+                logs: logs.slice(-50),
                 deck: gameState.deck,
                 discardPile,
                 currentTurn: gameState.currentTurn,
@@ -2319,7 +2344,7 @@
 
             await roomRef.update({
                 players,
-                logs,
+                logs: logs.slice(-50),
                 deck: gameState.deck,
                 discardPile,
                 currentTurn: gameState.currentTurn,

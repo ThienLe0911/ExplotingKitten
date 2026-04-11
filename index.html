@@ -281,6 +281,7 @@
         let isInitialized = false;
         let selectedCardIndexes = [];
         let defusingInterval = null;
+        let defusingResolved = false; // semaphore chống race condition giữa completeDefuse và explodeTimeout
 
         const CARD_TYPES = {
             KITTEN: { name: 'Mèo Nổ', color: 'bg-red-600 text-white', desc: 'Bạn bị loại trừ khi rút lá này (trừ khi có Gỡ Bom)!', isAction: false },
@@ -510,7 +511,14 @@
                         }
                     }
                 }
+                // Phát hiện game kết thúc → hiện overlay SAU KHI cập nhật gameState
+                let pendingGameOver = null;
+                if (gameState && newData.gameOverEvent &&
+                    (!gameState.gameOverEvent || gameState.gameOverEvent.timestamp !== newData.gameOverEvent.timestamp)) {
+                    pendingGameOver = newData.gameOverEvent;
+                }
                 gameState = newData;
+                if (pendingGameOver) showGameOverOverlay(pendingGameOver);
                 renderGame();
             }, err => console.error("Snapshot error:", err));
         }
@@ -541,6 +549,12 @@
 
             const me = gameState.players.find(p => p.uid === userId);
             if (!me) return;
+
+            // Xóa game-over overlay khi game được reset/khởi động lại
+            if (gameState.status !== 'finished') {
+                const goOverlay = document.getElementById('game-over-overlay');
+                if (goOverlay) goOverlay.remove();
+            }
 
             // Shuffle animation overlay (blocks all interactions while shuffling)
             if (gameState.shuffling?.animating) {
@@ -1010,7 +1024,8 @@
                      await roomRef.update({ 
                          status: 'finished', 
                          logs: firebase.firestore.FieldValue.arrayUnion(...logsArr), 
-                         players 
+                         players,
+                         gameOverEvent: { winnerName: survivors[0].name, winnerUid: survivors[0].uid, loserName: me.name, timestamp: Date.now() }
                      });
                      return;
                  }
@@ -1039,6 +1054,7 @@
                     }
                 } else {
                     logsArr.push(`[WARNING] BÁO ĐỘNG! ${me.name} vừa bốc phải MÈO NỔ!! Có 10 giây để Gỡ Bom!`);
+                    defusingResolved = false;
                     await roomRef.update({
                         players, deck,
                         logs: firebase.firestore.FieldValue.arrayUnion(...logsArr),
@@ -1113,11 +1129,22 @@
         }
 
         async function completeDefuse(position, defuseCard) {
+            // Guard: chặn race condition với explodeTimeout
+            if (gameState.status !== 'defusing' || defusingResolved) return;
+            defusingResolved = true;
+            // Xóa timer ngay lập tức để explodeTimeout không thể fire trong lúc chờ Firestore snapshot
+            if (defusingInterval) { clearInterval(defusingInterval); defusingInterval = null; }
+
             const players = JSON.parse(JSON.stringify(gameState.players));
             const meIdx = gameState.defusingPlayer;
             const me = players[meIdx];
             const deck = [...gameState.deck];
             let logsArr = [];
+
+            // Explicitly remove defuse card khỏi tay (safeguard nếu Firestore snapshot reset gameState giữa playDefuseCard và completeDefuse)
+            const dType = defuseCard?.type || defuseCard;
+            const dIdx = me.hand.findIndex(c => (c.type || c) === dType);
+            if (dIdx > -1) me.hand.splice(dIdx, 1);
 
             logsArr.push(`[DEFUSE] ${me.name} đã gỡ bom và bí mật cài lại vào nọc!`);
 
@@ -1175,7 +1202,8 @@
         }
 
         async function explodeTimeout() {
-            if (gameState.status !== 'defusing') return;
+            if (gameState.status !== 'defusing' || defusingResolved) return;
+            defusingResolved = true;
             const players = [...gameState.players];
             const meIdx = gameState.defusingPlayer;
             const me = players[meIdx];
@@ -1195,7 +1223,8 @@
                     status: 'finished', 
                     logs: firebase.firestore.FieldValue.arrayUnion(...logsArr), 
                     players, 
-                    deck: gameState.deck 
+                    deck: gameState.deck,
+                    gameOverEvent: { winnerName: survivors[0].name, winnerUid: survivors[0].uid, loserName: me.name, timestamp: Date.now() }
                 });
                 return;
             }
@@ -1726,7 +1755,8 @@
             closeModal();
             // Hiện popup lá rút đáy SAU khi đóng NOPE popup (tránh bị closeModal() hủy)
             if (drawFromBottomCard) showDrawnCardPopup(drawFromBottomCard, false, false);
-            await processPostHandChange(roomUpdate.players, roomUpdate.deck, roomUpdate.logs, roomUpdate.discardPile);
+            const isGameOver = await processPostHandChange(roomUpdate.players, roomUpdate.deck, roomUpdate.logs, roomUpdate.discardPile);
+            if (isGameOver) return; // Trò chơi kết thúc, không ghi roomUpdate nữa (tránh overwrite status: 'finished')
             // Giới hạn logs tối đa 50 entries để tránh document quá lớn (Firestore 400 error)
             roomUpdate.logs = roomUpdate.logs.slice(-50);
             await roomRef.update(roomUpdate);
@@ -2018,8 +2048,16 @@
             if (someoneDied) {
                 const survivors = players.filter(p => !p.isDead);
                 if (survivors.length === 1) {
+                    // Lấy tên người vừa thua từ log
+                    const deathLog = [...logs].reverse().find(l => l.includes('BỊ NỔ TUNG'));
+                    const loserName = deathLog?.match(/💀 (.+?) đã BỊ NỔ/)?.[1] || null;
                     logs.push(`🏆 ${survivors[0].name} LÀ NGƯỜI CHIẾN THẮNG CUỐI CÙNG!`);
-                    await roomRef.update({ status: 'finished', logs: logs.slice(-50), players, deck, discardPile });
+                    await roomRef.update({
+                        status: 'finished',
+                        logs: logs.slice(-50),
+                        players, deck, discardPile,
+                        gameOverEvent: { winnerName: survivors[0].name, winnerUid: survivors[0].uid, loserName, timestamp: Date.now() }
+                    });
                     return true;
                 }
                 // Nếu người chết là người đang tới lượt, chuyển lượt
@@ -2141,6 +2179,67 @@
                 </div>
                 <button onclick="closeModal()" class="w-full bg-zinc-700 hover:bg-zinc-600 py-3 rounded-xl lucky-font transition-colors">ĐÓNG & TIẾP TỤC</button>
             `;
+        }
+
+        function showGameOverOverlay(event) {
+            const existing = document.getElementById('game-over-overlay');
+            if (existing) existing.remove();
+
+            const isHost = gameState?.hostId === userId;
+            const overlay = document.createElement('div');
+            overlay.id = 'game-over-overlay';
+            overlay.className = 'fixed inset-0 bg-black/95 flex flex-col items-center justify-center z-[300] p-6';
+            overlay.innerHTML = `
+                <div class="text-center max-w-sm w-full">
+                    <div class="text-8xl mb-4 animate-bounce">🏆</div>
+                    <h2 class="lucky-font text-5xl text-yellow-400 mb-3 animate-pulse">${event.winnerName.toUpperCase()}</h2>
+                    <p class="text-zinc-300 mb-6 text-xl lucky-font">CHIẾN THẮNG VÁN NÀY!</p>
+                    ${event.loserName ? `
+                    <div class="bg-red-900/60 border border-red-700 rounded-2xl p-4 mb-8">
+                        <div class="text-5xl mb-2">💥</div>
+                        <p class="text-red-400 font-bold lucky-font text-2xl">${event.loserName.toUpperCase()} ĐÃ NỔ BANH!</p>
+                    </div>` : '<div class="mb-8"></div>'}
+                    <div class="flex flex-col gap-3">
+                        ${isHost ? `
+                        <button onclick="playAgain()" class="bg-green-600 hover:bg-green-700 px-8 py-4 rounded-xl lucky-font text-2xl transition-all hover:scale-105 shadow-[0_0_20px_rgba(34,197,94,0.4)]">
+                            🔄 CHƠI LẠI
+                        </button>` : `
+                        <div class="bg-zinc-800 px-8 py-4 rounded-xl text-zinc-400 lucky-font text-lg border border-zinc-700">
+                            ⏳ Chờ host bắt đầu ván mới...
+                        </div>`}
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(overlay);
+        }
+
+        async function playAgain() {
+            if (!gameState || gameState.hostId !== userId) return;
+            const players = gameState.players.map(p => ({
+                uid: p.uid,
+                name: p.name,
+                hand: [],
+                isDead: false,
+                isBlind: false,
+                turnsToTake: 1,
+                isWinner: false
+            }));
+            await roomRef.update({
+                status: 'waiting',
+                players,
+                deck: [],
+                discardPile: [],
+                currentTurn: 0,
+                logs: ['🔄 Ván mới chuẩn bị bắt đầu! Host bấm BẮT ĐẦU khi sẵn sàng.'],
+                pendingAction: null,
+                defusingPlayer: null,
+                defuseEndTime: null,
+                favorRequest: null,
+                playDirection: 1,
+                shuffling: null,
+                theftEvent: null,
+                gameOverEvent: null
+            });
         }
 
         function askCombo2Target(indexes) {

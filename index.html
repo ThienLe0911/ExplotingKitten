@@ -597,6 +597,15 @@
                 startBtn.classList.add('hidden');
             }
 
+            // Đóng defuse modal ngay khi game kết thúc hoặc reset về waiting (dù defusingInterval đã null)
+            if (gameState.status === 'finished' || gameState.status === 'waiting') {
+                if (defusingInterval) { clearInterval(defusingInterval); defusingInterval = null; }
+                const modal = document.getElementById('modal-container');
+                if (!modal.classList.contains('hidden') && document.getElementById('defuse-bar-inner')) {
+                    closeModal();
+                }
+            }
+
             if (gameState.status === 'defusing' && !defusingInterval) {
                 showDefusingPopup();
                 defusingInterval = setInterval(() => {
@@ -2258,6 +2267,9 @@
 
         async function playAgain() {
             if (!gameState || gameState.hostId !== userId) return;
+            // Reset local defuse state để tránh bug ván mới
+            defusingResolved = false;
+            if (defusingInterval) { clearInterval(defusingInterval); defusingInterval = null; }
             const players = gameState.players.map(p => ({
                 uid: p.uid,
                 name: p.name,

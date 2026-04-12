@@ -51,6 +51,12 @@
 - **Fix:** `renderGame` xóa `defusingInterval` và đóng modal khi status != 'defusing'; game-over overlay bị xóa khi status != 'finished'
 - **Thêm:** `playAgain()` reset thêm `drawnFromBottomEvent: null`
 
+### 9. Bốc bom không có gỡ bom → chết → khởi động ván mới → defuse popup vẫn hiện
+- **Root Cause:** Khi `explodeTimeout` chạy, `clearInterval(defusingInterval); defusingInterval = null` được gọi TRƯỚC khi ghi Firestore `status: 'finished'`. Khi `renderGame` chạy sau đó, `defusingInterval` đã là `null` → nhánh `else if (status !== 'defusing' && defusingInterval)` không trigger → modal không bao giờ đóng. Sau đó `playAgain()` set `status: 'waiting'` nhưng cũng không trigger gì vì `defusingInterval = null`.
+- **Fix 1:** Trong `renderGame`, thêm block mới ở đầu: khi `status === 'finished'` hoặc `'waiting'`, đóng defuse modal bất kể `defusingInterval`.
+- **Fix 2:** Trong `playAgain()`, reset `defusingResolved = false` và clear `defusingInterval` để local state không bị stale sang ván mới.
+- **QUAN TRỌNG:** Không được chỉ dựa vào `defusingInterval !== null` để đóng modal — khi timeout tự fire, interval đã bị clear trước khi status cập nhật.
+
 ### 7. TARGETED_ATTACK log thiếu tên target
 - **File:** `resolvePendingAction` case `TARGETED_ATTACK`
 - **Fix:** Log message dạng: `🎯 ${me.name} đâm lén ${players[tIdx].name}! ${players[tIdx].name} cần rút thêm 2 lượt!`

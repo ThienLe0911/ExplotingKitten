@@ -303,7 +303,7 @@
             FERAL_CAT: { name: 'Mèo Hoang', color: 'bg-zinc-600 text-white', desc: 'Ghép được với mọi lá mèo thường.', isAction: false },
             IMPLODING_KITTEN: { name: 'Mèo Sập (Úp)', color: 'bg-black text-white', desc: 'Sắp xếp lại lá này Cửa Ngửa vào nọc!', isAction: false },
             IMPLODING_KITTEN_ACTIVE: { name: 'Mèo Sập (Ngửa)', color: 'bg-black text-red-500 font-bold', desc: 'BÙM! Không thể GỠ BOM!', isAction: false },
-            STREAKING_KITTEN: { name: 'Mèo Chạy Rông', color: 'bg-amber-600 text-white', desc: 'Cho phép ôm 1 Mèo Nổ trên tay vô hình.', isAction: false },
+            STREAKING_KITTEN: { name: 'Mèo Quần Xì', color: 'bg-amber-600 text-white', desc: 'Cho phép ôm 1 Mèo Nổ trên tay vô hình.', isAction: false },
             CURSE_OF_THE_CAT_BUTT: { name: 'Lời Nguyền Mù', color: 'bg-stone-500 text-white', desc: 'Úp bài 1 người chơi cho đến khi họ bốc bài!', isAction: true },
             TACOCAT: { name: 'Mèo Taco', color: 'bg-amber-400 text-black', desc: 'Không có tác dụng.', isAction: false },
             HAIRY_POTATO_CAT: { name: 'Mèo Kho.Tây Lông', color: 'bg-orange-300 text-black', desc: 'Không có tác dụng.', isAction: false },
@@ -511,6 +511,13 @@
                         }
                     }
                 }
+                // Phát hiện drawnFromBottomEvent → hiện popup cho người rút
+                if (newData.drawnFromBottomEvent &&
+                    (!gameState?.drawnFromBottomEvent || gameState.drawnFromBottomEvent.timestamp !== newData.drawnFromBottomEvent.timestamp)) {
+                    if (newData.drawnFromBottomEvent.playerUid === userId) {
+                        setTimeout(() => showDrawnCardPopup(newData.drawnFromBottomEvent.cardType, false, false), 50);
+                    }
+                }
                 // Phát hiện game kết thúc → hiện overlay SAU KHI cập nhật gameState
                 let pendingGameOver = null;
                 if (gameState && newData.gameOverEvent &&
@@ -614,11 +621,25 @@
                     }
                 }, 50);
             } else if (gameState.status !== 'defusing' && defusingInterval) {
+                // 'placing_bomb' hoặc 'playing' → đưa bom được gỡ hoặc lượt mới
                 clearInterval(defusingInterval);
                 defusingInterval = null;
                 const modal = document.getElementById('modal-container');
+                // Đóng popup defusing của user khác (User gỡ bom sẽ tự xử lý popup riêng)
                 if (!modal.classList.contains('hidden') && document.getElementById('defuse-bar-inner')) {
                     closeModal();
+                }
+            }
+
+            // placing_bomb: chỉ người gỡ bom thấy UI cài bập — user khác không làm gì
+            if (gameState.status === 'placing_bomb') {
+                // Không start defusingInterval nữa, không có đồng hồ
+                // Chỉ bảo đảm modal đã đóng với user không phải defusingPlayer
+                if (gameState.players[gameState.defusingPlayer]?.uid !== userId) {
+                    const modal = document.getElementById('modal-container');
+                    if (!modal.classList.contains('hidden') && document.getElementById('defuse-bar-inner')) {
+                        closeModal();
+                    }
                 }
             }
 
@@ -1083,14 +1104,22 @@
         }
 
         async function playDefuseCard(defuseIdx) {
-            const players = [...gameState.players];
+            const players = JSON.parse(JSON.stringify(gameState.players));
             const meIdx = gameState.defusingPlayer;
             const me = players[meIdx];
             
-            // Remove defuse card from hand locally for UI calculation
+            // Gỡ bỏ lá DEFUSE khỏi tay và đổi status sang 'placing_bomb'
+            // để user khác không còn thấy đồng hồ đếm ngược nữa
             const defuseCard = me.hand.splice(defuseIdx, 1)[0];
             
-            // Show position selection modal
+            // Stop timer on server side for all users
+            await roomRef.update({
+                status: 'placing_bomb',
+                players,
+                defuseEndTime: null
+            });
+            
+            // Show position selection modal (chỉ người gỡ bom mới thấy)
             askKittenPosition(defuseCard);
         }
 
@@ -1130,9 +1159,9 @@
 
         async function completeDefuse(position, defuseCard) {
             // Guard: chặn race condition với explodeTimeout
-            if (gameState.status !== 'defusing' || defusingResolved) return;
+            if ((gameState.status !== 'defusing' && gameState.status !== 'placing_bomb') || defusingResolved) return;
             defusingResolved = true;
-            // Xóa timer ngay lập tức để explodeTimeout không thể fire trong lúc chờ Firestore snapshot
+            // Xóa timer người như không cần nữa (defuseEndTime đã null từ playDefuseCard)
             if (defusingInterval) { clearInterval(defusingInterval); defusingInterval = null; }
 
             const players = JSON.parse(JSON.stringify(gameState.players));
@@ -1202,7 +1231,7 @@
         }
 
         async function explodeTimeout() {
-            if (gameState.status !== 'defusing' || defusingResolved) return;
+            if ((gameState.status !== 'defusing' && gameState.status !== 'placing_bomb') || defusingResolved) return;
             defusingResolved = true;
             const players = [...gameState.players];
             const meIdx = gameState.defusingPlayer;
@@ -1538,12 +1567,25 @@
             const titleText = isNoped ? 'BỊ NÉM NOPE!' : 'ĐANG CHỜ NOPE...';
             const cardName = CARD_TYPES[action.type]?.name || action.type;
             
+            // Hiện thông tin target nếu có
+            let targetInfo = '';
+            if (action.targetData && action.targetData.targetId) {
+                const targetPlayer = gameState.players.find(p => p.uid === action.targetData.targetId);
+                if (targetPlayer) {
+                    const targetLabel = action.type === 'TARGETED_ATTACK' ? '→ Nhắm vào' :
+                                       action.type === 'FAVOR' ? '→ Yêu cầu từ' :
+                                       (action.type === 'COMBO_2' || action.type === 'COMBO_3') ? '→ Mục tiêu' : '→';
+                    targetInfo = '<p class="text-xs text-center mb-4 font-bold text-orange-400">' + targetLabel + ': <span class="text-white">' + targetPlayer.name + '</span></p>';
+                }
+            }
+            
             content.innerHTML = `
                 <div id="nope-popup-active" class="hidden"></div>
                 <h3 class="lucky-font text-2xl mb-4 text-center ${titleColor} animate-pulse">${titleText}</h3>
                 <p class="text-sm text-center text-zinc-300 mb-2 font-bold uppercase tracking-wider text-yellow-400">
                     LÁ BÀI: ${cardName}
                 </p>
+                ${targetInfo}
                 <p class="text-xs text-center text-zinc-400 mb-4 italic">
                     <b>${actionPlayerName}</b> đang định chơi bài này (Thực thi sau <span id="pending-time-text" class="font-mono text-orange-400 font-bold ml-1">8.0s</span>)
                 </p>
@@ -1609,7 +1651,8 @@
                         break;
                     case 'ATTACK':
                         const nextIdx = getNextLivingPlayerIndex(players, action.playerIdx);
-                        players[nextIdx].turnsToTake += 2;
+                        const attackerTurnsToPass = me.turnsToTake;
+                        players[nextIdx].turnsToTake = attackerTurnsToPass + 2;
                         me.turnsToTake = 1;
                         roomUpdate.currentTurn = nextIdx;
                         break;
@@ -1663,20 +1706,20 @@
                                 me.turnsToTake = 1;
                                 roomUpdate.currentTurn = getNextLivingPlayerIndex(players, action.playerIdx);
                             }
-                            // Chỉ thông báo riêng cho người rút, không lộ tên lá cho mọi người
+                            // Ghi vào actionResult để broadcast cho người rút biết lá nào (dùng cà khi host và non-host)
+                            roomUpdate.drawnFromBottomEvent = { playerUid: me.uid, cardType: bottomCard.type || bottomCard, timestamp: Date.now() };
                             roomUpdate.logs.push(`[RÚT ĐÁY] ${me.name} đã rút 1 lá từ đáy nọc bài.`);
-                            // Lưu lại để hiện popup SAU closeModal() (tránh bị đóng ngay lập tức)
-                            if (isMeAction) drawFromBottomCard = bottomCard.type || bottomCard;
                         }
                         break;
                     case 'TARGETED_ATTACK':
                         if (actualTargetData && actualTargetData.targetId) {
                             const tIdx = players.findIndex(p => p.uid === actualTargetData.targetId);
                             if (tIdx !== -1) {
+                                const attackerTurns = me.turnsToTake;
                                 me.turnsToTake = 1;
                                 roomUpdate.currentTurn = tIdx;
-                                players[tIdx].turnsToTake += 2;
-                                roomUpdate.logs.push(`🎯 ${me.name} đâm lén ${players[tIdx].name}!`);
+                                players[tIdx].turnsToTake = attackerTurns + 2;
+                                roomUpdate.logs.push(`🎯 ${me.name} đâm lén ${players[tIdx].name}! ${players[tIdx].name} cần rút thêm 2 lượt!`);
                             }
                         }
                         break;
@@ -2238,7 +2281,8 @@
                 playDirection: 1,
                 shuffling: null,
                 theftEvent: null,
-                gameOverEvent: null
+                gameOverEvent: null,
+                drawnFromBottomEvent: null
             });
         }
 

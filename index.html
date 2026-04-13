@@ -285,38 +285,40 @@
         let defusingResolved = false; // semaphore chống race condition giữa completeDefuse và explodeTimeout
 
         const CARD_TYPES = {
-            KITTEN: { name: 'Mèo Nổ', color: 'bg-red-600 text-white', desc: 'Bạn bị loại trừ khi rút lá này (trừ khi có Gỡ Bom)!', isAction: false },
-            DEFUSE: { name: 'Gỡ Bom', color: 'bg-green-500 text-white', desc: 'Vô hiệu hóa Mèo Nổ.', isAction: false },
-            ATTACK: { name: 'Tấn Công 2x', color: 'bg-orange-600 text-white', desc: 'Người tiếp theo rút 2 lần.', isAction: true },
-            SKIP: { name: 'Bỏ Qua', color: 'bg-blue-500 text-white', desc: 'Kết thúc lượt mà không cần rút.', isAction: true },
-            FAVOR: { name: 'Ưu Đãi', color: 'bg-purple-500 text-white', desc: 'Chọn 1 người bắt họ đưa 1 lá bài.', isAction: true },
-            SHUFFLE: { name: 'Xáo Bài', color: 'bg-yellow-500 text-black', desc: 'Xáo trộn lại chồng bài.', isAction: true },
-            SEE_THE_FUTURE: { name: 'Nhìn Tương Lai', color: 'bg-pink-500 text-white', desc: 'Xem 3 lá bài đầu.', isAction: true },
-            NOPE: { name: 'Không Đâu', color: 'bg-red-500 text-white', desc: 'Chặn bất kỳ lá bài hành động nào.', isAction: true },
-            REVERSE: { name: 'Đảo Chiều', color: 'bg-indigo-600 text-white', desc: 'Đảo chiều chơi và qua lượt.', isAction: true },
-            TARGETED_ATTACK: { name: 'Đâm Lén', color: 'bg-orange-700 text-white', desc: 'Chọn 1 người rút 2 lần.', isAction: true },
-            PERSONAL_ATTACK: { name: 'Tự Vả', color: 'bg-orange-800 text-white', desc: 'Tự rút 3 lần liên tiếp.', isAction: true },
-            SUPER_SKIP: { name: 'Siêu Bỏ Qua', color: 'bg-blue-600 text-white', desc: 'Bỏ qua TẤT CẢ các lượt đang có.', isAction: true },
-            DRAW_FROM_BOTTOM: { name: 'Rút Đáy', color: 'bg-cyan-600 text-white', desc: 'Rút lá dưới cùng nọc và kết thúc.', isAction: true },
-            SWAP_TOP_BOTTOM: { name: 'Đổi Đầu Đuôi', color: 'bg-teal-600 text-white', desc: 'Đổi lá bài trên cùng và dưới cùng.', isAction: true },
-            ALTER_THE_FUTURE: { name: 'Đổi Tương Lai', color: 'bg-fuchsia-600 text-white', desc: 'Xem và xếp lại 3 lá đầu nọc.', isAction: true },
-            CLONE: { name: 'Nhân Bản', color: 'bg-emerald-500 text-white', desc: 'Sao chép hiệu ứng Action Card trước đó.', isAction: true },
-            FERAL_CAT: { name: 'Mèo Hoang', color: 'bg-zinc-600 text-white', desc: 'Ghép được với mọi lá mèo thường.', isAction: false },
-            IMPLODING_KITTEN: { name: 'Mèo Sập (Úp)', color: 'bg-black text-white', desc: 'Sắp xếp lại lá này Cửa Ngửa vào nọc!', isAction: false },
-            IMPLODING_KITTEN_ACTIVE: { name: 'Mèo Sập (Ngửa)', color: 'bg-black text-red-500 font-bold', desc: 'BÙM! Không thể GỠ BOM!', isAction: false },
-            STREAKING_KITTEN: { name: 'Mèo Quần Xì', color: 'bg-amber-600 text-white', desc: 'Cho phép ôm 1 Mèo Nổ trên tay vô hình.', isAction: false },
-            CURSE_OF_THE_CAT_BUTT: { name: 'Lời Nguyền Mù', color: 'bg-stone-500 text-white', desc: 'Úp bài 1 người chơi cho đến khi họ bốc bài!', isAction: true },
-            TACOCAT: { name: 'Mèo Taco', color: 'bg-amber-400 text-black', desc: 'Không có tác dụng.', isAction: false },
-            HAIRY_POTATO_CAT: { name: 'Mèo Kho.Tây Lông', color: 'bg-orange-300 text-black', desc: 'Không có tác dụng.', isAction: false },
-            CATTERMELON: { name: 'Mèo Dưa Hấu', color: 'bg-green-400 text-black', desc: 'Không có tác dụng.', isAction: false },
-            RAINBOW_RALPHING_CAT: { name: 'Mèo Cầu Vồng', color: 'bg-gradient-to-r from-red-400 via-yellow-400 to-blue-400 text-white', desc: 'Không có tác dụng.', isAction: false },
-            BEARD_CAT: { name: 'Mèo Râu Ria', color: 'bg-slate-600 text-white', desc: 'Không có tác dụng.', isAction: false }
+            KITTEN: { name: 'Mèo Nổ', color: 'bg-red-600 text-white', desc: 'Bạn bị loại trừ khi rút lá này (trừ khi có Gỡ Bom)!', isAction: false, imageUrl: 'https://explodi.ng/images/cards/exploding-kitten/artworks/Exploding-Kitten.jpg' },
+            DEFUSE: { name: 'Gỡ Bom', color: 'bg-green-500 text-white', desc: 'Vô hiệu hóa Mèo Nổ.', isAction: false, imageUrl: 'https://explodi.ng/images/cards/defuse/artworks/Defuse-Via-3AM-Flatulence.jpg' },
+            ATTACK: { name: 'Tấn Công 2x', color: 'bg-orange-600 text-white', desc: 'Người tiếp theo rút 2 lần.', isAction: true, imageUrl: 'https://explodi.ng/images/cards/attack-2x/artworks/Attack-Bear-o-Dactyl.jpg' },
+            SKIP: { name: 'Bỏ Qua', color: 'bg-blue-500 text-white', desc: 'Kết thúc lượt mà không cần rút.', isAction: true, imageUrl: 'https://explodi.ng/images/cards/skip/artworks/Skip-Commandeer-a-Bunnyraptor.jpg' },
+            FAVOR: { name: 'Ưu Đãi', color: 'bg-purple-500 text-white', desc: 'Chọn 1 người bắt họ đưa 1 lá bài.', isAction: true, imageUrl: 'https://explodi.ng/images/cards/favor/artworks/Favor-Fall-So-Deeply-in-Love.jpg' },
+            SHUFFLE: { name: 'Xáo Bài', color: 'bg-yellow-500 text-black', desc: 'Xáo trộn lại chồng bài.', isAction: true, imageUrl: 'https://explodi.ng/images/cards/shuffle/artworks/Shuffle-A-Kraken-Emerges-and-Hes-Super-Upset.jpg' },
+            SEE_THE_FUTURE: { name: 'Nhìn Tương Lai', color: 'bg-pink-500 text-white', desc: 'Xem 3 lá bài đầu.', isAction: true, imageUrl: 'https://explodi.ng/images/cards/see-the-future-3x/artworks/See-the-Future-All-Seeing-Goat-Wizard.jpg' },
+            SEE_THE_FUTURE_5X: { name: 'Nhìn TL x5', color: 'bg-pink-700 text-white', desc: 'Xem 5 lá bài đầu.', isAction: true, imageUrl: 'https://explodi.ng/images/cards/see-the-future-5x/artworks/See-the-Future-Behold-the-Angler-Pig.jpg' },
+            NOPE: { name: 'Không Đâu', color: 'bg-red-500 text-white', desc: 'Chặn bất kỳ lá bài hành động nào.', isAction: true, imageUrl: 'https://explodi.ng/images/cards/nope/artworks/Nope-A-Jackanope-Bounds-into-the-Room.jpg' },
+            REVERSE: { name: 'Đảo Chiều', color: 'bg-indigo-600 text-white', desc: 'Đảo chiều chơi và qua lượt.', isAction: true, imageUrl: 'https://explodi.ng/images/cards/reverse/artworks/Reverse-Go-Back-In-Time-And-Steal-A-Pregnant-Dinosaur.jpg' },
+            TARGETED_ATTACK: { name: 'Đâm Lén', color: 'bg-orange-700 text-white', desc: 'Chọn 1 người rút 2 lần.', isAction: true, imageUrl: 'https://explodi.ng/images/cards/targeted-attack-2x/artworks/Targeted-Attack-2x-Deploy-The-Groin-Kicking-Panda-Bear.jpg' },
+            PERSONAL_ATTACK: { name: 'Tự Vả', color: 'bg-orange-800 text-white', desc: 'Tự rút 3 lần liên tiếp.', isAction: true, imageUrl: 'https://explodi.ng/images/cards/personal-attack-3x/artworks/Personal-Attack-Finally-Throw-Up-All-the-Crayons-You-Ate-When-You-Were-A-Kid.jpg' },
+            SUPER_SKIP: { name: 'Siêu Bỏ Qua', color: 'bg-blue-600 text-white', desc: 'Bỏ qua TẤT CẢ các lượt đang có.', isAction: true, imageUrl: 'https://explodi.ng/images/cards/super-skip/artworks/Super-Skip-Hitch-A-Ride-on-a-Corgihorse.jpg' },
+            DRAW_FROM_BOTTOM: { name: 'Rút Đáy', color: 'bg-cyan-600 text-white', desc: 'Rút lá dưới cùng nọc và kết thúc.', isAction: true, imageUrl: 'https://explodi.ng/images/cards/draw-from-the-bottom/artworks/Draw-from-the-Bottom-Take-a-Big-Bite-of-Your-Coward-Sandwich.jpg' },
+            SWAP_TOP_BOTTOM: { name: 'Đổi Đầu Đuôi', color: 'bg-teal-600 text-white', desc: 'Đổi lá bài trên cùng và dưới cùng.', isAction: true, imageUrl: 'https://explodi.ng/images/cards/swap-top-and-bottom/artworks/Swap-Top-and-Bottom.jpg' },
+            ALTER_THE_FUTURE: { name: 'Đổi Tương Lai', color: 'bg-fuchsia-600 text-white', desc: 'Xem và xếp lại 3 lá đầu nọc.', isAction: true, imageUrl: 'https://explodi.ng/images/cards/alter-the-future-3x/artworks/Alter-the-Future-Cat-Wizard.jpg' },
+            ALTER_THE_FUTURE_5X: { name: 'Đổi TL x5', color: 'bg-fuchsia-800 text-white', desc: 'Xem và xếp lại 5 lá nọc.', isAction: true, imageUrl: 'https://explodi.ng/images/cards/alter-the-future-5x/artworks/Alter-the-Future-Nikola-Telsa.jpg' },
+            CLONE: { name: 'Nhân Bản', color: 'bg-emerald-500 text-white', desc: 'Sao chép hiệu ứng Action Card trước đó.', isAction: true, imageUrl: 'https://explodi.ng/images/cards/clone/artworks/Clone-Find-A-Pair-Of-Nosfera-Twos.jpg' },
+            FERAL_CAT: { name: 'Mèo Hoang', color: 'bg-zinc-600 text-white', desc: 'Ghép được với mọi lá mèo thường.', isAction: false, imageUrl: 'https://explodi.ng/images/cards/feral-cat/artworks/Feral-Cat.jpg' },
+            IMPLODING_KITTEN: { name: 'Mèo Sập (Úp)', color: 'bg-black text-white', desc: 'Sắp xếp lại lá này Cửa Ngửa vào nọc!', isAction: false, imageUrl: 'https://explodi.ng/images/cards/imploding-kitten/artworks/Imploding-Kitten.jpg' },
+            IMPLODING_KITTEN_ACTIVE: { name: 'Mèo Sập (Ngửa)', color: 'bg-black text-red-500 font-bold', desc: 'BÙM! Không thể GỠ BOM!', isAction: false, imageUrl: 'https://explodi.ng/images/cards/imploding-kitten/artworks/Imploding-Kitten.jpg' },
+            STREAKING_KITTEN: { name: 'Mèo Quần Xì', color: 'bg-amber-600 text-white', desc: 'Cho phép ôm 1 Mèo Nổ trên tay vô hình.', isAction: false, imageUrl: 'https://explodi.ng/images/cards/streaking-kitten/artworks/Streaking-Kitten.jpg' },
+            CURSE_OF_THE_CAT_BUTT: { name: 'Lời Nguyền Mù', color: 'bg-stone-500 text-white', desc: 'Úp bài 1 người chơi cho đến khi họ bốc bài!', isAction: true, imageUrl: 'https://explodi.ng/images/cards/curse-of-the-cat-butt/artworks/1-Curse-of-the-Cat-Butt.jpg' },
+            TACOCAT: { name: 'Mèo Taco', color: 'bg-amber-400 text-black', desc: 'Không có tác dụng.', isAction: false, imageUrl: 'https://explodi.ng/images/cards/cat-card/artworks/Tacocat.jpg' },
+            HAIRY_POTATO_CAT: { name: 'Mèo Kho.Tây Lông', color: 'bg-orange-300 text-black', desc: 'Không có tác dụng.', isAction: false, imageUrl: 'https://explodi.ng/images/cards/cat-card/artworks/Hairy-Potato-Cat.jpg' },
+            CATTERMELON: { name: 'Mèo Dưa Hấu', color: 'bg-green-400 text-black', desc: 'Không có tác dụng.', isAction: false, imageUrl: 'https://explodi.ng/images/cards/cat-card/artworks/Cattermelon.jpg' },
+            RAINBOW_RALPHING_CAT: { name: 'Mèo Cầu Vồng', color: 'bg-gradient-to-r from-red-400 via-yellow-400 to-blue-400 text-white', desc: 'Không có tác dụng.', isAction: false, imageUrl: 'https://explodi.ng/images/cards/cat-card/artworks/Rainbow-Ralphing-Cat.jpg' },
+            BEARD_CAT: { name: 'Mèo Râu Ria', color: 'bg-slate-600 text-white', desc: 'Không có tác dụng.', isAction: false, imageUrl: 'https://explodi.ng/images/cards/cat-card/artworks/Beard-Cat.jpg' }
         };
 
         const DECK_COMPOSITION = {
-            ATTACK: 4, SKIP: 4, FAVOR: 4, SHUFFLE: 4, SEE_THE_FUTURE: 5, NOPE: 5,
+            ATTACK: 4, SKIP: 4, FAVOR: 4, SHUFFLE: 4, SEE_THE_FUTURE: 5, SEE_THE_FUTURE_5X: 5, NOPE: 5,
             REVERSE: 4, TARGETED_ATTACK: 3, PERSONAL_ATTACK: 4, SUPER_SKIP: 4,
-            DRAW_FROM_BOTTOM: 4, SWAP_TOP_BOTTOM: 3, ALTER_THE_FUTURE: 4, CLONE: 3, FERAL_CAT: 4,
+            DRAW_FROM_BOTTOM: 4, SWAP_TOP_BOTTOM: 3, ALTER_THE_FUTURE: 4, ALTER_THE_FUTURE_5X: 5, CLONE: 3, FERAL_CAT: 4,
             STREAKING_KITTEN: 1, CURSE_OF_THE_CAT_BUTT: 1,
             TACOCAT: 4, HAIRY_POTATO_CAT: 4, CATTERMELON: 4, RAINBOW_RALPHING_CAT: 4, BEARD_CAT: 4
         };
@@ -542,10 +544,15 @@
                 <h3 class="lucky-font text-2xl mb-4 text-center text-red-500">BÁO ĐỘNG ĐỎ!</h3>
                 <p class="text-sm text-center text-zinc-300 mb-4"><b>${event.thiefName}</b> vừa nẫng tay trên lá bài này của bạn:</p>
                 <div class="flex justify-center mb-6 mt-4">
-                    <div class="w-40 h-56 p-4 rounded-xl pixel-border ${cInfo.color} flex flex-col justify-between text-center card-animation animate-bounce">
-                        <p class="text-sm font-bold uppercase tracking-wider">${cInfo.name}</p>
-                        <div class="text-xs italic mt-2">${cInfo.desc}</div>
-                        <div class="text-4xl mt-auto">🐈</div>
+                    <div class="w-40 h-56 p-0 relative overflow-hidden rounded-xl pixel-border ${cInfo.color} flex flex-col justify-between text-center card-animation animate-bounce shadow-2xl">
+                        ${cInfo.imageUrl 
+                            ? '<img src="' + cInfo.imageUrl + '" class="absolute inset-0 w-full h-full object-cover">'
+                            : '<div class="w-full h-full p-4 flex flex-col justify-between z-10">' +
+                              '<p class="text-sm font-bold uppercase tracking-wider">' + cInfo.name + '</p>' +
+                              '<div class="text-xs italic mt-2">' + cInfo.desc + '</div>' +
+                              '<div class="text-4xl mt-auto">🐈</div>' +
+                              '</div>'
+                        }
                     </div>
                 </div>
                 <button onclick="closeModal()" class="w-full bg-zinc-700 hover:bg-zinc-600 py-3 rounded-xl lucky-font transition-colors">CAY THẬT!</button>
@@ -793,13 +800,15 @@
                     cardBtn.disabled = !canSelect || me.isDead;
                     cardBtn.onclick = () => toggleCardSelection(idx);
                 } else {
-                    cardBtn.className = `w-24 h-36 p-2 rounded-lg pixel-border flex flex-col justify-between text-left card-animation ${cardData.color} shrink-0 disabled:opacity-50 disabled:hover:translate-y-0 ${isSelected ? '-translate-y-6 ring-4 ring-yellow-400 shadow-[0_10px_20px_rgba(250,204,21,0.5)] z-40' : ''}`;
+                    cardBtn.className = `w-24 h-36 p-0 rounded-lg pixel-border overflow-hidden relative card-animation ${cardData.color} shrink-0 disabled:opacity-50 disabled:hover:translate-y-0 ${isSelected ? '-translate-y-6 ring-4 ring-yellow-400 shadow-[0_10px_20px_rgba(250,204,21,0.5)] z-40' : ''}`;
                     cardBtn.disabled = !canSelect || me.isDead;
-                    cardBtn.innerHTML = `
-                    <p class="text-[10px] font-bold leading-tight uppercase">${cardData.name}</p>
-                    <div class="text-[8px] mt-1 leading-none italic">${cardData.desc}</div>
-                    <div class="mt-auto text-right text-xs">🐈</div>
-                `;
+                    cardBtn.innerHTML = cardData.imageUrl 
+                        ? '<img src="' + cardData.imageUrl + '" class="absolute inset-0 w-full h-full object-cover" alt="' + cardData.name + '">'
+                        : '<div class="w-full h-full p-2 flex flex-col justify-between z-10">' +
+                          '<p class="text-[10px] font-bold leading-tight uppercase">' + cardData.name + '</p>' +
+                          '<div class="text-[8px] mt-1 leading-none italic">' + cardData.desc + '</div>' +
+                          '<div class="mt-auto text-right text-xs">🐈</div>' +
+                          '</div>';
                     cardBtn.onclick = () => toggleCardSelection(idx);
                 }
                 handEl.appendChild(cardBtn);
@@ -845,11 +854,11 @@
             if (lastDiscard) {
                 const dType = lastDiscard.type || lastDiscard;
                 const dData = CARD_TYPES[dType];
-                discardPileEl.className = `w-32 h-44 border-4 border-white rounded-xl flex flex-col items-center justify-center shadow-xl p-4 text-center ${dData.color}`;
-                document.getElementById('discard-name').innerText = dData.name;
+                discardPileEl.className = `w-32 h-44 border-4 border-white rounded-xl overflow-hidden relative flex flex-col items-center justify-center shadow-2xl p-0 text-center ${dData.color}`;
+                discardPileEl.innerHTML = dData.imageUrl ? '<img src="' + dData.imageUrl + '" class="absolute inset-0 w-full h-full object-cover">' : '<span class="text-xs font-bold uppercase p-2 z-10">' + dData.name + '</span>';
             } else {
-                discardPileEl.className = "w-32 h-44 bg-zinc-800 border-2 border-zinc-600 rounded-xl flex flex-col items-center justify-center shadow-xl p-2 text-center";
-                document.getElementById('discard-name').innerText = "Trống";
+                discardPileEl.className = "w-32 h-44 bg-zinc-800 border-2 border-zinc-600 rounded-xl overflow-hidden flex flex-col items-center justify-center shadow-xl p-2 text-center";
+                discardPileEl.innerHTML = '<span class="text-xs font-bold uppercase">Trống</span>';
             }
             
             // FAVOR UI
@@ -867,18 +876,23 @@
                         <h3 class="lucky-font text-2xl mb-4 text-blue-400 uppercase">Cống nạp cho ${fromPlayer ? fromPlayer.name : 'ai đó'}</h3>
                         <p class="text-xs text-zinc-400 mb-6 font-bold uppercase">Chọn 1 lá để cho đi (Họ đã dùng lá FAVOR):</p>
                         <div class="flex overflow-x-auto space-x-2 pb-4 mb-6 scrollbar-hide">
-                            ${myHand.map((c, i) => {
-                                const ct = c.type || c;
-                                const cd = CARD_TYPES[ct];
-                                return `
-                                    <button onclick="completeFavor(${i})" class="w-20 h-28 p-2 rounded-lg ${cd.color} flex flex-col justify-between text-center shrink-0 border-2 border-white hover:scale-105 transition-transform shadow-lg">
-                                        <p class="text-[8px] font-bold uppercase">${cd.name}</p>
-                                        <div class="text-[12px]">🐈</div>
-                                    </button>
-                                `;
-                            }).join('')}
-                        </div>
-                        <p class="text-[10px] text-zinc-500 italic">Luật chơi: Bạn buộc phải cho 1 lá bài bất kỳ.</p>
+                                ${myHand.map((c, i) => {
+                                    const ct = c.type || c;
+                                    const cd = CARD_TYPES[ct];
+                                    const innerContent = cd.imageUrl
+                                        ? '<img src="' + cd.imageUrl + '" class="absolute inset-0 w-full h-full object-cover">'
+                                        : '<div class="w-full h-full p-2 flex flex-col justify-between z-10">' +
+                                          '<p class="text-[8px] font-bold uppercase">' + cd.name + '</p>' +
+                                          '<div class="text-[12px]">🐈</div>' +
+                                          '</div>';
+                                    return `
+                                        <button onclick="completeFavor(\${i})" class="w-20 h-28 p-0 rounded-lg overflow-hidden relative \${cd.color} flex flex-col justify-between text-center shrink-0 border-2 border-white hover:scale-105 transition-transform shadow-lg" title="\${cd.name}">
+                                            \${innerContent}
+                                        </button>
+                                    `;
+                                }).join('')}
+                            </div>
+                            <p class="text-[10px] text-zinc-500 italic">Luật chơi: Bạn buộc phải cho 1 lá bài bất kỳ.</p>
                     `;
                 } else if (isFromMe && modal.classList.contains('hidden')) {
                     modal.classList.remove('hidden');
@@ -1716,6 +1730,14 @@
                             timestamp: Date.now()
                         };
                         break;
+                    case 'SEE_THE_FUTURE_5X':
+                        roomUpdate.actionResult = { 
+                            type: 'SEE_THE_FUTURE_5X', 
+                            playerUid: me.uid, 
+                            cards: roomUpdate.deck.slice(-5).reverse(),
+                            timestamp: Date.now()
+                        };
+                        break;
                     case 'REVERSE':
                         const newDir = (gameState.playDirection || 1) * -1;
                         roomUpdate.playDirection = newDir;
@@ -1742,6 +1764,14 @@
                             type: 'ALTER_THE_FUTURE', 
                             playerUid: me.uid, 
                             cards: roomUpdate.deck.slice(-3).reverse(),
+                            timestamp: Date.now()
+                        };
+                        break;
+                    case 'ALTER_THE_FUTURE_5X':
+                        roomUpdate.actionResult = { 
+                            type: 'ALTER_THE_FUTURE_5X', 
+                            playerUid: me.uid, 
+                            cards: roomUpdate.deck.slice(-5).reverse(),
                             timestamp: Date.now()
                         };
                         break;
@@ -1908,8 +1938,11 @@
                     const ct = c.type || c;
                     const cd = CARD_TYPES[ct];
                     return `
-                        <div class="w-20 h-28 p-2 rounded-lg border-2 border-white ${cd.color} flex flex-col justify-center text-center shadow-lg">
-                            <p class="text-[10px] font-bold uppercase leading-tight">${cd.name}</p>
+                        <div class="w-20 h-28 p-0 rounded-lg border-2 border-white ${cd.color} flex flex-col justify-center text-center shadow-lg relative overflow-hidden">
+                            ${cd.imageUrl 
+                                ? '<img src="' + cd.imageUrl + '" class="absolute inset-0 w-full h-full object-cover">'
+                                : '<p class="text-[10px] font-bold uppercase leading-tight p-2 z-10">' + cd.name + '</p>'
+                            }
                         </div>
                     `;
                 }).join('')}
@@ -1950,8 +1983,11 @@
                     <p class="text-xs text-fuchsia-300 mb-1">Thứ tự mới (Sẽ đổi):</p>
                     <div class="flex space-x-2 min-h-24 border border-dashed border-zinc-600 rounded-lg p-2 items-center justify-center">
                         ${selected.length === 0 ? '<span class="text-zinc-600 text-xs">Trống</span>' : selected.map((c, idx) => `
-                            <div class="w-14 h-20 bg-zinc-800 rounded-md border border-fuchsia-500 flex flex-col justify-center text-center cursor-pointer" onclick="undoAlterFuture(${idx})">
-                                <p class="text-[9px] font-bold uppercase text-white">${CARD_TYPES[c.type || c].name}</p>
+                            <div class="w-14 h-20 bg-zinc-800 rounded-md border border-fuchsia-500 flex flex-col justify-center text-center cursor-pointer relative overflow-hidden" onclick="undoAlterFuture(${idx})">
+                                ${CARD_TYPES[c.type || c].imageUrl 
+                                    ? '<img src="' + CARD_TYPES[c.type || c].imageUrl + '" class="absolute inset-0 w-full h-full object-cover grayscale opacity-80 hover:grayscale-0">' 
+                                    : '<p class="text-[9px] font-bold uppercase text-white p-1 z-10">' + CARD_TYPES[c.type || c].name + '</p>'
+                                }
                             </div>
                         `).join('')}
                     </div>
@@ -1961,8 +1997,11 @@
                     <p class="text-xs text-zinc-400 mb-1">Các lá bài ban đầu (Nhấn để chọn):</p>
                     <div class="flex space-x-2 justify-center">
                         ${unselected.map(obj => `
-                            <div class="w-14 h-20 rounded-lg border-2 border-white ${CARD_TYPES[obj.c.type || obj.c].color} flex flex-col justify-center text-center cursor-pointer transition-transform hover:scale-105" onclick="selectAlterFuture(${obj.i})">
-                                <p class="text-[9px] font-bold uppercase">${CARD_TYPES[obj.c.type || obj.c].name}</p>
+                            <div class="w-14 h-20 rounded-lg border-2 border-white ${CARD_TYPES[obj.c.type || obj.c].color} flex flex-col justify-center text-center cursor-pointer transition-transform hover:scale-105 relative overflow-hidden" onclick="selectAlterFuture(${obj.i})">
+                                ${CARD_TYPES[obj.c.type || obj.c].imageUrl 
+                                    ? '<img src="' + CARD_TYPES[obj.c.type || obj.c].imageUrl + '" class="absolute inset-0 w-full h-full object-cover">'
+                                    : '<p class="text-[9px] font-bold uppercase p-1 z-10">' + CARD_TYPES[obj.c.type || obj.c].name + '</p>'
+                                }
                             </div>
                         `).join('')}
                     </div>

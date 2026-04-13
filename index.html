@@ -188,7 +188,8 @@
                     ĐẦU</button>
             </div>
 
-            <div id="players-list" class="grid grid-cols-2 md:grid-cols-6 gap-2 mb-6"></div>
+            <div id="players-list" class="grid grid-cols-2 md:grid-cols-6 gap-2 mb-2"></div>
+            <div id="direction-indicator" class="text-xs text-zinc-400 mb-4 text-center hidden"></div>
 
             <div id="deck-preview" class="mb-6 bg-zinc-800 p-4 rounded-xl border border-zinc-700 hidden shadow-inner">
                 <div class="flex justify-between items-center mb-3">
@@ -597,8 +598,9 @@
                 startBtn.classList.add('hidden');
             }
 
-            // Đóng defuse modal ngay khi game kết thúc hoặc reset về waiting (dù defusingInterval đã null)
-            if (gameState.status === 'finished' || gameState.status === 'waiting') {
+            // Đóng defuse modal khi không còn ở trạng thái defusing (bao gồm cả playing/finished/waiting/placing_bomb)
+            // Điều này đảm bảo popup luôn đóng dù defusingInterval đã bị null từ trước (vd: explodeTimeout)
+            if (gameState.status !== 'defusing') {
                 if (defusingInterval) { clearInterval(defusingInterval); defusingInterval = null; }
                 const modal = document.getElementById('modal-container');
                 if (!modal.classList.contains('hidden') && document.getElementById('defuse-bar-inner')) {
@@ -629,27 +631,6 @@
                         }
                     }
                 }, 50);
-            } else if (gameState.status !== 'defusing' && defusingInterval) {
-                // 'placing_bomb' hoặc 'playing' → đưa bom được gỡ hoặc lượt mới
-                clearInterval(defusingInterval);
-                defusingInterval = null;
-                const modal = document.getElementById('modal-container');
-                // Đóng popup defusing của user khác (User gỡ bom sẽ tự xử lý popup riêng)
-                if (!modal.classList.contains('hidden') && document.getElementById('defuse-bar-inner')) {
-                    closeModal();
-                }
-            }
-
-            // placing_bomb: chỉ người gỡ bom thấy UI cài bập — user khác không làm gì
-            if (gameState.status === 'placing_bomb') {
-                // Không start defusingInterval nữa, không có đồng hồ
-                // Chỉ bảo đảm modal đã đóng với user không phải defusingPlayer
-                if (gameState.players[gameState.defusingPlayer]?.uid !== userId) {
-                    const modal = document.getElementById('modal-container');
-                    if (!modal.classList.contains('hidden') && document.getElementById('defuse-bar-inner')) {
-                        closeModal();
-                    }
-                }
             }
 
             const turnIndicator = document.getElementById('turn-indicator');
@@ -686,6 +667,29 @@
             `;
                 playersList.appendChild(pDiv);
             });
+
+            // Cập nhật mũi tên chiều vòng chơi
+            const directionEl = document.getElementById('direction-indicator');
+            if ((gameState.status === 'playing' || gameState.status === 'defusing' || gameState.status === 'placing_bomb') && gameState.players.filter(p => !p.isDead).length > 1) {
+                const dir = gameState.playDirection || 1;
+                const allPlayers = gameState.players;
+                const orderedNames = [];
+                let cur = gameState.currentTurn;
+                const visited = new Set();
+                while (orderedNames.length < allPlayers.filter(p => !p.isDead).length && !visited.has(cur)) {
+                    visited.add(cur);
+                    if (!allPlayers[cur].isDead) {
+                        const isMe = allPlayers[cur].uid === userId;
+                        orderedNames.push(isMe ? `<span class="text-white font-bold">${allPlayers[cur].name}</span>` : allPlayers[cur].name);
+                    }
+                    cur = (cur + dir + allPlayers.length) % allPlayers.length;
+                }
+                const arrow = dir === 1 ? ' → ' : ' ← ';
+                directionEl.innerHTML = `Thứ tự: ${orderedNames.join(arrow)} ${arrow} ...`;
+                directionEl.classList.remove('hidden');
+            } else {
+                directionEl.classList.add('hidden');
+            }
 
             if (gameState.pendingAction) {
                 if (!window.pendingActionInterval) {
@@ -851,7 +855,9 @@
             // FAVOR UI
             if (gameState.status === 'playing' && gameState.favorRequest) {
                 const isToMe = (gameState.favorRequest.to === userId);
+                const isFromMe = (gameState.favorRequest.from === userId);
                 const fromPlayer = gameState.players.find(p => p.uid === gameState.favorRequest.from);
+                const toPlayer = gameState.players.find(p => p.uid === gameState.favorRequest.to);
                 const modal = document.getElementById('modal-container');
                 const content = document.getElementById('modal-content');
                 if (isToMe && modal.classList.contains('hidden')) {
@@ -873,6 +879,13 @@
                             }).join('')}
                         </div>
                         <p class="text-[10px] text-zinc-500 italic">Luật chơi: Bạn buộc phải cho 1 lá bài bất kỳ.</p>
+                    `;
+                } else if (isFromMe && modal.classList.contains('hidden')) {
+                    modal.classList.remove('hidden');
+                    content.innerHTML = `
+                        <h3 class="lucky-font text-2xl mb-4 text-purple-400 uppercase animate-pulse">ĐANG CHỜ CỐNG NẠP...</h3>
+                        <p class="text-sm text-zinc-300 mb-3 text-center">Đã gửi yêu cầu Ưu Đãi cho <b>${toPlayer ? toPlayer.name : 'đối thủ'}</b>.</p>
+                        <p class="text-xs text-zinc-400 text-center">Chờ đối thủ chọn 1 lá để cống nạp. Trong lúc này bạn chưa thể đánh thêm lá.</p>
                     `;
                 }
             }
@@ -1033,6 +1046,12 @@
             const meIdx = players.findIndex(p => p.uid === userId);
             if (meIdx !== gameState.currentTurn) return;
 
+            // Đang chờ cống nạp FAVOR thì người đánh FAVOR không được thao tác tiếp
+            if (gameState.favorRequest?.from === userId) {
+                showToast("Đang chờ cống nạp, chưa thể rút bài!");
+                return;
+            }
+
             const me = players[meIdx];
             const deck = [...gameState.deck];
             let logsArr = [];
@@ -1112,14 +1131,15 @@
             });
         }
 
-        async function playDefuseCard(defuseIdx) {
+        async function playDefuseCard(hintIdx) {
             const players = JSON.parse(JSON.stringify(gameState.players));
             const meIdx = gameState.defusingPlayer;
             const me = players[meIdx];
             
-            // Gỡ bỏ lá DEFUSE khỏi tay và đổi status sang 'placing_bomb'
-            // để user khác không còn thấy đồng hồ đếm ngược nữa
-            const defuseCard = me.hand.splice(defuseIdx, 1)[0];
+            // Tìm DEFUSE dynamically (tránh bug stale index khi hand thay đổi sau khi popup render)
+            const actualDefuseIdx = me.hand.findIndex(c => (c.type || c) === 'DEFUSE');
+            if (actualDefuseIdx === -1) return; // Không tìm thấy DEFUSE
+            const defuseCard = me.hand.splice(actualDefuseIdx, 1)[0];
             
             // Stop timer on server side for all users
             await roomRef.update({
@@ -1359,6 +1379,12 @@
             const me = players[meIdx];
             if (selectedCardIndexes.length === 0) return;
 
+            // Đang chờ cống nạp FAVOR thì người đánh FAVOR không được đánh thêm bài
+            if (gameState.favorRequest?.from === userId) {
+                showToast("Đang chờ cống nạp từ đối thủ...");
+                return;
+            }
+
             const indexes = [...selectedCardIndexes].sort((a, b) => b - a);
             const selectedCards = indexes.map(i => me.hand[i]).filter(c => c !== undefined);
             if (selectedCards.length === 0) {
@@ -1481,7 +1507,9 @@
 
             let actionType = origActionType;
             if (actionType === 'CLONE') {
-                const discardPile = gameState.discardPile || [];
+                // Đọc discardPile trực tiếp từ Firestore để tránh stale local state
+                const roomSnap = await roomRef.get();
+                const discardPile = roomSnap.data().discardPile || [];
                 const topActionCard = [...discardPile].reverse().find(c => {
                     const type = c.type || c;
                     return CARD_TYPES[type]?.isAction && type !== 'CLONE' && type !== 'NOPE';
@@ -1517,7 +1545,13 @@
                     nopeCount: 0,
                     endTime: Date.now() + 8000,
                     targetData: targetData,
-                    confirmed: !!(targetData && (targetData.confirmed || (targetData.targetId && targetData.cardIndex !== undefined)))
+                    confirmed: !!(targetData && (
+                        targetData.confirmed ||
+                        (actionType === 'COMBO_2' && targetData.targetId && targetData.cardIndex !== undefined) ||
+                        (actionType === 'COMBO_3' && targetData.targetId && targetData.requestedType) ||
+                        (actionType === 'COMBO_5' && targetData.requestedType) ||
+                        ((actionType === 'FAVOR' || actionType === 'TARGETED_ATTACK' || actionType === 'CURSE_OF_THE_CAT_BUTT') && targetData.targetId)
+                    ))
                 }
             });
         }
@@ -1530,31 +1564,31 @@
             const actionPlayerName = gameState.players[action.playerIdx].name;
 
             if (isMe && isModalAction) {
-                if (!document.getElementById('modal-container').classList.contains('hidden') && 
-                    !document.getElementById('nope-popup-active')) return;
-                
-                // Nếu pendingAction đã có đủ targetData (user đã chọn xong), không mở lại UI
                 const td = action.targetData;
                 const alreadyConfirmed = action.confirmed === true;
-                if (alreadyConfirmed) return;
 
-                switch (action.type) {
-                    case 'COMBO_2':
-                        // Chưa chọn target hoặc chưa chọn lá thì mới hỏi
-                        if (!td || !td.targetId) {
-                            askCombo2Target();
-                        } else if (td.cardIndex === undefined) {
-                            askCombo2CardPick(td.targetId, []);
-                        }
-                        // Nếu đã có đủ targetId + cardIndex thì không làm gì (đang pending trước NOPE)
-                        break;
-                    case 'COMBO_3': askCombo3Target(); break;
-                    case 'COMBO_5': askCombo5Target(); break;
-                    case 'FAVOR': askFavor(gameState.players, action.playerIdx); break;
-                    case 'TARGETED_ATTACK': askTargetedAttackTarget(gameState.players, action.playerIdx); break;
-                    case 'CURSE_OF_THE_CAT_BUTT': askCurseTarget(gameState.players, action.playerIdx); break;
+                if (!alreadyConfirmed) {
+                    // Chưa chọn target → hiển thị UI chọn mục tiêu
+                    if (!document.getElementById('modal-container').classList.contains('hidden') && 
+                        !document.getElementById('nope-popup-active')) return;
+
+                    switch (action.type) {
+                        case 'COMBO_2':
+                            if (!td || !td.targetId) {
+                                askCombo2Target();
+                            } else if (td.cardIndex === undefined) {
+                                askCombo2CardPick(td.targetId, []);
+                            }
+                            break;
+                        case 'COMBO_3': askCombo3Target(); break;
+                        case 'COMBO_5': askCombo5Target(); break;
+                        case 'FAVOR': askFavor(gameState.players, action.playerIdx); break;
+                        case 'TARGETED_ATTACK': askTargetedAttackTarget(gameState.players, action.playerIdx); break;
+                        case 'CURSE_OF_THE_CAT_BUTT': askCurseTarget(gameState.players, action.playerIdx); break;
+                    }
+                    return;
                 }
-                return;
+                // alreadyConfirmed: target đã chọn xong → fall through để hiển thị NOPE countdown popup
             }
 
             const modal = document.getElementById('modal-container');
@@ -1611,7 +1645,9 @@
             const isMe = (action.playerIdx === gameState.players.findIndex(p => p.uid === userId));
             const isModalAction = ['COMBO_2','COMBO_3','COMBO_5','FAVOR','TARGETED_ATTACK','CURSE_OF_THE_CAT_BUTT'].includes(action.type);
 
-            if (isMe && isModalAction) return;
+            // Chỉ bỏ qua update timer khi người đánh còn đang ở màn chọn target (chưa confirm)
+            // Nếu đã confirm thì phải update countdown như mọi client khác.
+            if (isMe && isModalAction && !action.confirmed) return;
 
             const remaining = action.endTime ? Math.max(0, action.endTime - Date.now()) : 8000;
             const bar = document.getElementById('pending-bar-inner');
@@ -1655,8 +1691,11 @@
                 roomUpdate.logs.push(`✅ Hành động của ${me.name} THÀNH CÔNG!`);
                 switch (action.type) {
                     case 'SKIP':
-                        me.turnsToTake = 1;
-                        roomUpdate.currentTurn = getNextLivingPlayerIndex(players, action.playerIdx);
+                        me.turnsToTake--;
+                        if (me.turnsToTake <= 0) {
+                            me.turnsToTake = 1;
+                            roomUpdate.currentTurn = getNextLivingPlayerIndex(players, action.playerIdx);
+                        }
                         break;
                     case 'ATTACK':
                         const nextIdx = getNextLivingPlayerIndex(players, action.playerIdx);

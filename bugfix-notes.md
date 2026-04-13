@@ -52,10 +52,10 @@
 - **Thêm:** `playAgain()` reset thêm `drawnFromBottomEvent: null`
 
 ### 9. Bốc bom không có gỡ bom → chết → khởi động ván mới → defuse popup vẫn hiện
-- **Root Cause:** Khi `explodeTimeout` chạy, `clearInterval(defusingInterval); defusingInterval = null` được gọi TRƯỚC khi ghi Firestore `status: 'finished'`. Khi `renderGame` chạy sau đó, `defusingInterval` đã là `null` → nhánh `else if (status !== 'defusing' && defusingInterval)` không trigger → modal không bao giờ đóng. Sau đó `playAgain()` set `status: 'waiting'` nhưng cũng không trigger gì vì `defusingInterval = null`.
-- **Fix 1:** Trong `renderGame`, thêm block mới ở đầu: khi `status === 'finished'` hoặc `'waiting'`, đóng defuse modal bất kể `defusingInterval`.
-- **Fix 2:** Trong `playAgain()`, reset `defusingResolved = false` và clear `defusingInterval` để local state không bị stale sang ván mới.
-- **QUAN TRỌNG:** Không được chỉ dựa vào `defusingInterval !== null` để đóng modal — khi timeout tự fire, interval đã bị clear trước khi status cập nhật.
+- **Root Cause:** `explodeTimeout` clear `defusingInterval` TRƯỚC khi write Firestore. `renderGame` thấy `defusingInterval = null` nên không trigger close modal.
+- **Fix 1 (Phase 8):** `renderGame` check `finished || waiting` → đóng modal (KHÔNG ĐỦ vì không cover `playing`)
+- **Fix 2 (Phase 9):** `renderGame` check `status !== 'defusing'` → cover tất cả trạng thái không phải defusing. `playAgain()` reset `defusingResolved = false`.
+- **QUAN TRỌNG:** Không dùng `defusingInterval !== null` làm guard duy nhất để đóng modal.
 
 ### 7. TARGETED_ATTACK log thiếu tên target
 - **File:** `resolvePendingAction` case `TARGETED_ATTACK`
@@ -63,11 +63,57 @@
 
 ### 8. ATTACK/TARGETED_ATTACK stacking không cộng dồn đúng
 - **Bug:** Khi player A đang có 3 lượt và chơi ATTACK → next player chỉ nhận 3 lượt (1+2) thay vì 5 lượt (3+2)
-- **Root Cause:** `players[nextIdx].turnsToTake += 2` cộng 2 vào `nextIdx.turnsToTake` (=1), không liên quan `me.turnsToTake`
-- **Fix:** 
-  - ATTACK: `const attackerTurnsToPass = me.turnsToTake; players[nextIdx].turnsToTake = attackerTurnsToPass + 2; me.turnsToTake = 1;`
-  - TARGETED_ATTACK: `const attackerTurns = me.turnsToTake; me.turnsToTake = 1; players[tIdx].turnsToTake = attackerTurns + 2;`
-- **Lưu ý:** Phải lưu `me.turnsToTake` vào biến tạm TRƯỚC khi reset `me.turnsToTake = 1`
+- **Root Cause:** `players[nextIdx].turnsToTake += 2` không dùng `me.turnsToTake`
+- **Fix:** Lưu `attackerTurns = me.turnsToTake` TRƯỚC khi reset, sau đó `nextPlayer.turnsToTake = attackerTurns + 2`
+
+### 10. CLONE sao chép sai lá bài
+- **Root Cause:** `initiateAction` đọc `gameState.discardPile` (stale local state), có thể thấy lá cũ do Firestore write chưa propagate
+- **Fix:** `const roomSnap = await roomRef.get(); const discardPile = roomSnap.data().discardPile || [];`
+
+### 11. SKIP pass qua người tiếp theo thay vì trừ 1 lượt
+- **Bug:** Khi có 3 lượt + dùng SKIP → pass luôn thay vì còn 2 lượt
+- **Root Cause:** `case 'SKIP': me.turnsToTake = 1; advance` — luôn advance không kể số lượt còn lại
+- **Fix:** `me.turnsToTake--; if (me.turnsToTake <= 0) { me.turnsToTake = 1; advance; }`
+
+### 12. Gỡ bom mất thêm 1 lá thừa
+- **Root Cause:** `showDefusingPopup` hardcode `defuseIdx = findIndex('DEFUSE')` vào onclick HTML button. Nếu hand thay đổi (Firestore snapshot) trước khi user bấm → index stale → splice nhầm lá khác.
+- **Fix:** `playDefuseCard` luôn `findIndex('DEFUSE')` dynamically, không dùng parameter index.
+- **QUAN TRỌNG:** Không hardcode card index vào HTML button onclick khi hand có thể thay đổi bất kỳ lúc nào.
+
+### 13. Popup defuse vẫn hiện cho Thu/Nhu sau khi Thien nổ (game chưa kết thúc)
+- **Root Cause:** Check cũ chỉ cover `finished/waiting`, không cover `playing` khi còn >1 người sống
+- **Fix:** Thay `if (finished || waiting)` bằng `if (status !== 'defusing')` để cover tất cả
+
+### 14. Popup NOPE countdown không hiện cho người đánh COMBO_2/TARGETED_ATTACK
+- **Root Cause:** `showPendingActionPopup`: khi `isMe && isModalAction && alreadyConfirmed` → `return` ngay
+- **Fix:** Restructure: `if (!alreadyConfirmed) { show target UI; return; }` → khi `alreadyConfirmed`, fall through → show NOPE countdown
+
+### 15. Cải tiến: Mũi tên chiều vòng chơi
+- **Thêm:** `<div id="direction-indicator">` trong HTML + update trong `renderGame`
+- **Logic:** Iterate từ `currentTurn` theo `playDirection` → collect tên theo thứ tự → join " → " / " ← "
+- **Hiển thị:** "Thứ tự: Thien → Nhu → Thu → ..." (tên mình in đậm trắng)
+
+### 16. Đâm Lén/Favor: người đánh không thấy popup chờ NOPE
+- **Bug:** Người bị nhắm thấy "ĐANG CHỜ NOPE", nhưng người đánh (action owner) không thấy nên không kịp phản-NOPE
+- **Root Cause:** `pendingAction.confirmed` được tính theo rule cũ (chủ yếu cho COMBO_2), không phù hợp với `TARGETED_ATTACK/FAVOR/CURSE` chỉ cần `targetId`
+- **Fix:** Trong `initiateAction`, tính `confirmed` theo từng loại action:
+  - `COMBO_2`: cần `targetId + cardIndex`
+  - `COMBO_3`: cần `targetId + requestedType`
+  - `COMBO_5`: cần `requestedType`
+  - `FAVOR/TARGETED_ATTACK/CURSE`: chỉ cần `targetId`
+- **Kết quả:** Người đánh luôn thấy popup countdown NOPE đúng lúc để phản ứng.
+
+### 17. Favor: người đánh vẫn thao tác được khi đang chờ cống nạp
+- **Bug:** Sau khi đánh FAVOR và chọn target, người đánh vẫn có thể rút/đánh lá khác trong lúc target chưa cống nạp
+- **Fix 1:** Khóa thao tác ở `drawCard` và `executePlay` nếu `gameState.favorRequest?.from === userId`
+- **Fix 2:** Hiển thị modal trạng thái cho người đánh FAVOR: "ĐANG CHỜ CỐNG NẠP..."
+- **Kết quả:** Luồng đúng: người đánh chờ target nộp lá, không thể đi tiếp lượt trái luật.
+
+### 18. Đâm Lén: phía người đánh không chạy countdown (kẹt ở 8.0s)
+- **Bug:** Sau khi chọn target cho `TARGETED_ATTACK`, cả 2 bên đều thấy popup NOPE nhưng phía người đánh (`action owner`) thanh thời gian đứng yên ở `8.0s`.
+- **Root Cause:** `updatePendingActionPopup` có guard `if (isMe && isModalAction) return;` nên client người đánh không update `pending-bar-inner`/`pending-time-text`.
+- **Fix:** Đổi guard thành `if (isMe && isModalAction && !action.confirmed) return;`
+- **Ý nghĩa:** Chỉ bỏ qua update khi còn ở bước chọn mục tiêu. Khi đã `confirmed`, popup NOPE phải được update timer như mọi client khác.
 
 ---
 
@@ -87,7 +133,7 @@ waiting → playing → defusing → placing_bomb → playing (hoặc finished)
 
 ### Semaphores / Race condition guards
 - `defusingResolved` — chỉ cho `completeDefuse` hoặc `explodeTimeout` chạy 1 lần duy nhất
-- `defusingInterval` — ref để clearInterval; check null trước khi start
+- `defusingInterval` — ref để clearInterval; KHÔNG dùng làm guard duy nhất để đóng modal
 
 ### Vị trí đặt bom (`completeDefuse`)
 - `-2` = Đáy (`deck.unshift`)  
@@ -97,6 +143,6 @@ waiting → playing → defusing → placing_bomb → playing (hoặc finished)
 
 ### turnsToTake logic
 - Default = 1 (rút 1 lá, kết thúc lượt)
-- ATTACK từ A → B: `B.turnsToTake = A.turnsToTake + 2`, rồi `A.turnsToTake = 1`
+- ATTACK từ A → B: lưu `attackerTurns = A.turnsToTake` TRƯỚC, rồi `B.turnsToTake = attackerTurns + 2`, `A.turnsToTake = 1`
 - Sau khi rút bài: `me.turnsToTake--; if (<=0) { reset=1; nextTurn }`
-- SKIP: bỏ qua 1 lượt, giảm `turnsToTake` như rút bài
+- SKIP: giảm `turnsToTake` như rút bài (không advance nếu còn lượt)

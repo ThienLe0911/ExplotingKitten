@@ -795,12 +795,12 @@
                 cardBtn.addEventListener('dragend', onCardDragEnd);
 
                 if (me.isBlind) {
-                    cardBtn.className = `w-24 h-36 p-2 rounded-lg pixel-border flex flex-col justify-center items-center text-center bg-stone-900 border-2 ${isSelected ? 'border-yellow-400 -translate-y-6 ring-4 ring-yellow-400 shadow-[0_10px_20px_rgba(250,204,21,0.5)] z-40' : 'border-stone-700'} shrink-0 disabled:opacity-50 disabled:hover:translate-y-0 text-white`;
+                    cardBtn.className = `w-32 h-44 p-2 rounded-lg pixel-border flex flex-col justify-center items-center text-center bg-stone-900 border-2 ${isSelected ? 'border-yellow-400 -translate-y-6 ring-4 ring-yellow-400 shadow-[0_10px_20px_rgba(250,204,21,0.5)] z-40' : 'border-stone-700'} shrink-0 disabled:opacity-50 disabled:hover:translate-y-0 text-white`;
                     cardBtn.innerHTML = `<div class="text-4xl">🕳️</div>`;
                     cardBtn.disabled = !canSelect || me.isDead;
                     cardBtn.onclick = () => toggleCardSelection(idx);
                 } else {
-                    cardBtn.className = `w-24 h-36 p-0 rounded-lg pixel-border overflow-hidden relative card-animation ${cardData.color} shrink-0 disabled:opacity-50 disabled:hover:translate-y-0 ${isSelected ? '-translate-y-6 ring-4 ring-yellow-400 shadow-[0_10px_20px_rgba(250,204,21,0.5)] z-40' : ''}`;
+                    cardBtn.className = `w-32 h-44 p-0 rounded-lg pixel-border overflow-hidden relative card-animation ${cardData.color} shrink-0 disabled:opacity-50 disabled:hover:translate-y-0 ${isSelected ? '-translate-y-6 ring-4 ring-yellow-400 shadow-[0_10px_20px_rgba(250,204,21,0.5)] z-40' : ''}`;
                     cardBtn.disabled = !canSelect || me.isDead;
                     cardBtn.innerHTML = cardData.imageUrl 
                         ? '<img src="' + cardData.imageUrl + '" class="absolute inset-0 w-full h-full object-cover" alt="' + cardData.name + '">'

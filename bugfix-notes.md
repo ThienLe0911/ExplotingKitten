@@ -146,3 +146,69 @@ waiting → playing → defusing → placing_bomb → playing (hoặc finished)
 - ATTACK từ A → B: lưu `attackerTurns = A.turnsToTake` TRƯỚC, rồi `B.turnsToTake = attackerTurns + 2`, `A.turnsToTake = 1`
 - Sau khi rút bài: `me.turnsToTake--; if (<=0) { reset=1; nextTurn }`
 - SKIP: giảm `turnsToTake` như rút bài (không advance nếu còn lượt)
+
+---
+
+## Phase 9 (April 2026)
+
+### 19. Gỡ bom bị trừ 2 lá DEFUSE
+- **Bug:** Khi bốc bom và dùng Gỡ Bom, người chơi có thể mất 2 lá DEFUSE.
+- **Root Cause:** DEFUSE bị `splice` ở cả `playDefuseCard` và `completeDefuse`.
+- **Fix:** Chỉ trừ DEFUSE trong `playDefuseCard`; `completeDefuse` không trừ lại.
+
+### 20. Combo 5 lá không chọn được lá trong mộ bài / game bị đứng
+- **Bug:** Sau khi đánh 5 lá, popup chọn lá bị lỗi hoặc không thực thi.
+- **Root Cause 1:** Đọc kiểu lá trong discard sai (giả định luôn là object có `.type`).
+- **Root Cause 2:** Một số trường hợp thiếu `indexes` khi commit target của COMBO_5.
+- **Fix:**
+  - Normalize card type bằng `(c?.type || c)`.
+  - Thêm guard `commitCombo5`: nếu thiếu 5 index hợp lệ thì báo lỗi và dừng an toàn.
+  - Nếu `pendingAction` COMBO_5 đã tồn tại thì chỉ cập nhật `targetData` + `confirmed`.
+
+### 21. Lời Nguyền Mù không tự hết sau khi rút/qua lượt
+- **Bug:** Người bị nguyền vẫn bị úp bài dù đã rút bài hoặc dùng lá qua lượt.
+- **Fix:** Reset `isBlind = false` khi:
+  - `drawCard`
+  - `SKIP`
+  - `SUPER_SKIP`
+  - `DRAW_FROM_BOTTOM`
+
+### 22. Mộ bài cập nhật trễ/sai thứ tự (ảnh hưởng CLONE)
+- **Bug:** Vừa đánh action nhưng mộ bài hiển thị lá cũ, CLONE có thể đọc sai action gần nhất.
+- **Root Cause:** Dùng `firebase.firestore.FieldValue.arrayUnion` cho `discardPile` làm mất tính thứ tự ổn định và không phù hợp khi cần cho phép lá trùng.
+- **Fix:** Chuyển sang append mảng theo snapshot hiện tại: `discardPile: [...(gameState.discardPile || []), ...cards]`.
+
+### 23. Pending action bị treo (đặc biệt Rút Đáy)
+- **Bug:** Hiện popup chờ NOPE, hết thời gian vẫn đứng và action không thực thi.
+- **Root Cause:** Logic auto-resolve chỉ cho host xử lý khi timer về 0.
+- **Fix:** Cho host **hoặc chính action owner** gọi `resolvePendingAction()` khi hết giờ.
+
+### 24. Chồng action khi pending chưa xong
+- **Bug:** Có thể đánh action/combo mới khi pending action cũ chưa resolve, dẫn đến popup sai loại lá (ví dụ đang combo 5 mà hiện Đâm Lén từ pending cũ).
+- **Fix:** Trong `executePlay`, nếu đang có `pendingAction` thì chỉ cho phép reaction (`NOPE`/`CLONE` hợp lệ), chặn action mới.
+
+### 25. NOPE chain đúng luật: owner được NOPE trả đũa
+- **Rule chuẩn:** A đánh action → B NOPE → A có quyền NOPE lại (YUP) lá NOPE của B.
+- **Fix logic:**
+  - Chỉ chặn owner tự NOPE khi `nopeCount` đang chẵn (chưa ai NOPE trước).
+  - Cho phép owner NOPE/CLONE phản đòn khi `nopeCount` lẻ.
+  - Cập nhật điều kiện hiển thị nút phản ứng để khớp rule trên.
+
+### 26. Đồng bộ thông điệp thời gian NOPE
+- **Bug:** Log báo 5s trong khi countdown thực tế là 8s.
+- **Fix:** Chuẩn hóa message NOPE window thành 8s.
+
+### 27. Hỗ trợ test tạm thời: host luôn có 1 lá Lời Nguyền Mù
+- **Mục đích:** Test nhanh chức năng Curse theo yêu cầu.
+- **Cách làm:** Khi `startGame`, nếu host chưa có `CURSE_OF_THE_CAT_BUTT`:
+  - Ưu tiên rút lá này từ deck (nếu có),
+  - nếu không có thì tạo thêm 1 lá tạm cho host.
+- **Lưu ý:** Đây là fix hỗ trợ test tạm thời, sẽ xóa sau khi test xong.
+
+---
+
+## Nguyên tắc chống hồi quy (Regression Rule)
+
+- Khi sửa bug mới, **không được làm hỏng các bug đã fix trước đó**.
+- Mọi thay đổi liên quan `pendingAction`, `defuse`, `discardPile`, `turnsToTake`, `isBlind` phải rà soát chéo các flow cũ trước khi merge.
+- Ưu tiên thêm guard an toàn (early return + validate dữ liệu) thay vì sửa nóng làm đổi hành vi toàn cục.

@@ -711,7 +711,9 @@
                                 clearInterval(window.pendingActionInterval);
                                 window.pendingActionInterval = null;
                                 const isHost = gameState.hostId === userId;
-                                if (isHost) {
+                                const myPlayerIdx = gameState.players.findIndex(p => p.uid === userId);
+                                const amActionOwner = gameState.pendingAction?.playerIdx === myPlayerIdx;
+                                if (isHost || amActionOwner) {
                                      resolvePendingAction();
                                 }
                             }
@@ -817,7 +819,15 @@
             const playBtn = document.getElementById('play-selected-btn');
             const firstCard = me.hand[selectedCardIndexes[0]];
             const firstCardType = firstCard?.type || firstCard;
-            const isReactionSelected = selectedCardIndexes.length === 1 && (firstCardType === 'NOPE' || (firstCardType === 'CLONE' && !!gameState.pendingAction));
+            const myPlayerIdx = gameState.players.findIndex(p => p.uid === userId);
+            const canSelfCounterNope = !!gameState.pendingAction &&
+                gameState.pendingAction.playerIdx === myPlayerIdx &&
+                ((gameState.pendingAction.nopeCount || 0) % 2) !== 0;
+            const isReactionSelected = selectedCardIndexes.length === 1 && (
+                firstCardType === 'NOPE' ||
+                (firstCardType === 'CLONE' && !!gameState.pendingAction &&
+                    (gameState.pendingAction.playerIdx !== myPlayerIdx || canSelfCounterNope))
+            );
             
             if ((isMyTurn && selectedCardIndexes.length > 0) || isReactionSelected) {
                 playBtn.classList.remove('hidden');
@@ -1031,6 +1041,20 @@
                 };
             });
 
+            // Chế độ hỗ trợ test: chủ phòng luôn có 1 lá Lời Nguyền Mù.
+            const hostIdx = players.findIndex(p => p.uid === gameState.hostId);
+            if (hostIdx !== -1) {
+                const hostHasCurse = players[hostIdx].hand.some(c => (c.type || c) === 'CURSE_OF_THE_CAT_BUTT');
+                if (!hostHasCurse) {
+                    const curseIdxInDeck = deck.findIndex(c => (c.type || c) === 'CURSE_OF_THE_CAT_BUTT');
+                    if (curseIdxInDeck !== -1) {
+                        players[hostIdx].hand.push(deck.splice(curseIdxInDeck, 1)[0]);
+                    } else {
+                        players[hostIdx].hand.push({ type: 'CURSE_OF_THE_CAT_BUTT', name: CARD_TYPES.CURSE_OF_THE_CAT_BUTT.name });
+                    }
+                }
+            }
+
             const pCount = players.length;
             const baseKCount = pCount - 1;
             const kittensCount = Math.max(0, (baseKCount > 1 ? baseKCount - 1 : 0) + (offsets['KITTEN'] || 0));
@@ -1080,6 +1104,8 @@
 
             const card = deck.pop();
             const cardType = card.type || card;
+              // Lời nguyền mù kết thúc khi người chơi thực hiện hành động rút bài.
+              me.isBlind = false;
             
             if (cardType === 'IMPLODING_KITTEN_ACTIVE') {
                  me.isDead = true;
@@ -1216,10 +1242,7 @@
             const deck = [...gameState.deck];
             let logsArr = [];
 
-            // Explicitly remove defuse card khỏi tay (safeguard nếu Firestore snapshot reset gameState giữa playDefuseCard và completeDefuse)
-            const dType = defuseCard?.type || defuseCard;
-            const dIdx = me.hand.findIndex(c => (c.type || c) === dType);
-            if (dIdx > -1) me.hand.splice(dIdx, 1);
+            // playDefuseCard đã trừ DEFUSE trước đó; không trừ lần nữa để tránh mất 2 lá DEFUSE.
 
             logsArr.push(`[DEFUSE] ${me.name} đã gỡ bom và bí mật cài lại vào nọc!`);
 
@@ -1272,7 +1295,7 @@
                 currentTurn: nextTurn,
                 defuseEndTime: null,
                 defusingPlayer: null,
-                discardPile: firebase.firestore.FieldValue.arrayUnion(defuseCard)
+                discardPile: [...(gameState.discardPile || []), defuseCard]
             });
         }
 
@@ -1411,8 +1434,21 @@
             }
             const selectedTypes = selectedCards.map(c => c.type || c);
             const isNopeOnly = selectedTypes.length === 1 && selectedTypes[0] === 'NOPE';
-            const isCloneResponse = selectedTypes.length === 1 && selectedTypes[0] === 'CLONE' && !!gameState.pendingAction;
+            const canSelfCounterNope = !!gameState.pendingAction &&
+                gameState.pendingAction.playerIdx === meIdx &&
+                ((gameState.pendingAction.nopeCount || 0) % 2) !== 0;
+            const isCloneResponse = selectedTypes.length === 1 &&
+                selectedTypes[0] === 'CLONE' &&
+                !!gameState.pendingAction &&
+                (gameState.pendingAction.playerIdx !== meIdx || canSelfCounterNope);
             const isReaction = isNopeOnly || isCloneResponse;
+
+            // Không cho chơi action/combo mới khi hành động trước đó đang chờ NOPE.
+            // Chỉ cho phép phản ứng bằng NOPE hoặc CLONE (yup) trước khi mở hành động kế tiếp.
+            if (gameState.pendingAction && !isReaction) {
+                showToast("Đang chờ xử lý hành động trước đó. Chỉ có thể dùng NOPE/CLONE để phản ứng.");
+                return;
+            }
 
             if (gameState.status === 'defusing') {
                 const defuseCardIdx = selectedTypes.indexOf('DEFUSE');
@@ -1491,6 +1527,14 @@
             const players = [...gameState.players];
             const meIdx = players.findIndex(p => p.uid === userId);
             const me = players[meIdx];
+
+            const nopeCount = gameState.pendingAction.nopeCount || 0;
+            const isOwner = gameState.pendingAction.playerIdx === meIdx;
+            const canCounterNope = isOwner && (nopeCount % 2 !== 0);
+            if (isOwner && !canCounterNope) {
+                showToast("Bạn chưa thể tự NOPE hành động của mình trước khi có ai NOPE trước.");
+                return;
+            }
             
             const card = me.hand.splice(cardIdx, 1)[0];
             const cardType = card.type || card;
@@ -1510,7 +1554,7 @@
 
             await roomRef.update({ 
                 players, 
-                discardPile: firebase.firestore.FieldValue.arrayUnion(card), 
+                discardPile: [...(gameState.discardPile || []), card], 
                 logs: firebase.firestore.FieldValue.arrayUnion(logEntry), 
                 pendingAction 
             });
@@ -1537,7 +1581,7 @@
                     [...indexes].sort((a,b)=>b-a).forEach(i => me.hand.splice(i, 1));
                     await roomRef.update({ 
                         players, 
-                        discardPile: firebase.firestore.FieldValue.arrayUnion(...usedCards), 
+                        discardPile: [...(gameState.discardPile || []), ...usedCards], 
                         logs: firebase.firestore.FieldValue.arrayUnion(...logsArr) 
                     });
                     return;
@@ -1550,11 +1594,11 @@
             [...indexes].sort((a,b)=>b-a).forEach(i => me.hand.splice(i, 1));
             
             const cardName = usedCards.length === 1 ? CARD_TYPES[usedCards[0].type || usedCards[0]].name : `Combo ${usedCards.length} lá`;
-            logsArr.push(`🃏 ${me.name} thi triển: ${cardName}. Có ai ném NOPE chặn không? (5s)`);
+            logsArr.push(`🃏 ${me.name} thi triển: ${cardName}. Có ai ném NOPE chặn không? (8s)`);
 
             await roomRef.update({
                 players,
-                discardPile: firebase.firestore.FieldValue.arrayUnion(...usedCards),
+                discardPile: [...(gameState.discardPile || []), ...usedCards],
                 logs: firebase.firestore.FieldValue.arrayUnion(...logsArr),
                 pendingAction: {
                     type: actionType,
@@ -1678,7 +1722,7 @@
             const action = { ...gameState.pendingAction };
             const meIdx = gameState.players.findIndex(p => p.uid === userId);
             const isMeAction = (action.playerIdx === meIdx);
-            const isHost = (gameState.hostId === userId);
+            const isHost = gameState.hostId === userId;
             if (!isMeAction && !isHost) return;
 
             const isNoped = (action.nopeCount % 2) !== 0;
@@ -1709,6 +1753,7 @@
                 switch (action.type) {
                     case 'SKIP':
                         me.turnsToTake--;
+                        me.isBlind = false;
                         if (me.turnsToTake <= 0) {
                             me.turnsToTake = 1;
                             roomUpdate.currentTurn = getNextLivingPlayerIndex(players, action.playerIdx);
@@ -1749,6 +1794,7 @@
                         break;
                     case 'SUPER_SKIP':
                         me.turnsToTake = 1;
+                        me.isBlind = false;
                         roomUpdate.currentTurn = getNextLivingPlayerIndex(players, action.playerIdx);
                         break;
                     case 'SWAP_TOP_BOTTOM':
@@ -1782,6 +1828,7 @@
                         if (roomUpdate.deck.length > 0) {
                             const bottomCard = roomUpdate.deck.shift();
                             me.hand.push(bottomCard);
+                            me.isBlind = false;
                             me.turnsToTake--;
                             if (me.turnsToTake <= 0) {
                                 me.turnsToTake = 1;
@@ -2590,7 +2637,8 @@
 
         function askCombo5Target(indexes) {
             const discardPile = gameState.discardPile || [];
-            const uniqueDiscards = [...new Set(discardPile.map(c => c.type))].filter(type => type !== 'KITTEN');
+            const uniqueDiscards = [...new Set(discardPile.map(c => c?.type || c))]
+                .filter(type => !!type && type !== 'KITTEN');
             
             if (uniqueDiscards.length === 0) {
                 showToast("Không có lá bài hợp lệ nào trong đống bỏ!");
@@ -2608,7 +2656,7 @@
                     ${uniqueDiscards.map(type => {
                         const cardInfo = CARD_TYPES[type];
                         return `
-                            <button onclick="commitCombo5('${type}', ${JSON.stringify(indexes)})" class="p-3 rounded-xl border border-zinc-600 ${cardInfo.color} text-[10px] sm:text-xs font-bold uppercase transition-transform hover:scale-105 active:scale-95 flex flex-col items-center justify-center text-center h-20">
+                            <button onclick="commitCombo5('${type}', ${JSON.stringify(indexes ?? null)})" class="p-3 rounded-xl border border-zinc-600 ${cardInfo.color} text-[10px] sm:text-xs font-bold uppercase transition-transform hover:scale-105 active:scale-95 flex flex-col items-center justify-center text-center h-20">
                                 <span class="text-xl mb-1">${getCardIcon(type)}</span>
                                 ${cardInfo.name}
                             </button>
@@ -2621,6 +2669,25 @@
 
         async function commitCombo5(requestedCardType, indexes) {
             closeModal();
+            const meIdx = gameState?.players?.findIndex(p => p.uid === userId) ?? -1;
+
+            // Nếu đã có pendingAction COMBO_5 của chính người chơi này, chỉ cập nhật lựa chọn lá muốn lấy.
+            if (gameState?.pendingAction && gameState.pendingAction.playerIdx === meIdx && gameState.pendingAction.type === 'COMBO_5') {
+                await roomRef.update({
+                    pendingAction: {
+                        ...gameState.pendingAction,
+                        targetData: { requestedType: requestedCardType },
+                        confirmed: true
+                    }
+                });
+                return;
+            }
+
+            if (!Array.isArray(indexes) || indexes.length !== 5) {
+                showToast("Combo 5 lá bị mất dữ liệu lựa chọn. Hãy chọn lại 5 lá và đánh lại.");
+                return;
+            }
+
             await initiateAction(indexes, 'COMBO_5', { requestedType: requestedCardType, confirmed: true });
         }
 

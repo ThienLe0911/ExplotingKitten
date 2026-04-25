@@ -1507,12 +1507,7 @@
                     showToast("Cần 3 lá bài giống nhau!");
                 }
             } else if (selectedTypes.length === 5) {
-                const uniqueTypes = new Set(selectedTypes);
-                if (uniqueTypes.size === 5) {
-                    askCombo5Target(indexes);
-                } else {
-                    showToast("Cần 5 lá bài KHÁC NHAU!");
-                }
+                askCombo5Target(indexes);
             } else {
                 showToast("Tổ hợp bài không hợp lệ!");
             }
@@ -2650,11 +2645,11 @@
             modal.classList.remove('hidden');
 
             content.innerHTML = `
-                <h3 class="lucky-font text-2xl mb-4 text-yellow-500">COMBO 5 LÁ KHÁC NHAU</h3>
+                <h3 class="lucky-font text-2xl mb-4 text-yellow-500">COMBO 5 LÁ</h3>
                 <p class="text-sm text-zinc-400 mb-4">Chọn 1 lá bài từ đống bài bỏ để nhặt về tay:</p>
                 <div class="grid grid-cols-2 gap-2 mb-6 max-h-60 overflow-y-auto pr-2">
                     ${uniqueDiscards.map(type => {
-                        const cardInfo = CARD_TYPES[type];
+                        const cardInfo = CARD_TYPES[type] || { name: type, color: 'bg-zinc-700 text-white' };
                         return `
                             <button onclick="commitCombo5('${type}', ${JSON.stringify(indexes ?? null)})" class="p-3 rounded-xl border border-zinc-600 ${cardInfo.color} text-[10px] sm:text-xs font-bold uppercase transition-transform hover:scale-105 active:scale-95 flex flex-col items-center justify-center text-center h-20">
                                 <span class="text-xl mb-1">${getCardIcon(type)}</span>
@@ -2689,6 +2684,15 @@
             }
 
             await initiateAction(indexes, 'COMBO_5', { requestedType: requestedCardType, confirmed: true });
+        }
+
+        function getCardIcon(type) {
+            if (type === 'NOPE') return '🚫';
+            if (type === 'DEFUSE') return '🧯';
+            if (type === 'KITTEN' || type === 'IMPLODING_KITTEN' || type === 'IMPLODING_KITTEN_ACTIVE') return '💣';
+            if (type === 'STREAKING_KITTEN' || type === 'FERAL_CAT') return '🐱';
+            if (CARD_TYPES[type]?.isAction) return '⚡';
+            return '🃏';
         }
 
         function closeModal() {

@@ -1041,20 +1041,6 @@
                 };
             });
 
-            // Chế độ hỗ trợ test: chủ phòng luôn có 1 lá Lời Nguyền Mù.
-            const hostIdx = players.findIndex(p => p.uid === gameState.hostId);
-            if (hostIdx !== -1) {
-                const hostHasCurse = players[hostIdx].hand.some(c => (c.type || c) === 'CURSE_OF_THE_CAT_BUTT');
-                if (!hostHasCurse) {
-                    const curseIdxInDeck = deck.findIndex(c => (c.type || c) === 'CURSE_OF_THE_CAT_BUTT');
-                    if (curseIdxInDeck !== -1) {
-                        players[hostIdx].hand.push(deck.splice(curseIdxInDeck, 1)[0]);
-                    } else {
-                        players[hostIdx].hand.push({ type: 'CURSE_OF_THE_CAT_BUTT', name: CARD_TYPES.CURSE_OF_THE_CAT_BUTT.name });
-                    }
-                }
-            }
-
             const pCount = players.length;
             const baseKCount = pCount - 1;
             const kittensCount = Math.max(0, (baseKCount > 1 ? baseKCount - 1 : 0) + (offsets['KITTEN'] || 0));
